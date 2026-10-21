@@ -22,7 +22,7 @@ web/app/page.tsx                    api/src/core/…
  Key badge (components/StatusPill.tsx + ApiKeyDialog.tsx) ── POST /api/api-key/verify
 ```
 
-Every request that may call Claude carries the user's own key in the `x-anthropic-api-key` header if they saved one (`web/lib/apiKey.ts`). The server uses its own key first, then the user's, then demo data.
+Every request that may call Claude carries the user's own key in the `x-llm-api-key` header if they saved one (`web/lib/apiKey.ts`). The server uses its own key first, then the user's, then demo data.
 
 ## 2. Where the results come from
 

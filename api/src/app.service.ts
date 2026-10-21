@@ -33,11 +33,11 @@ export class AppService {
   getHealth() {
     return {
       status: 'ok',
-      // "anthropic" when the server has its own key; otherwise users may supply theirs, else demo data.
-      llmProvider: this.llm.hasServerKey ? 'anthropic' : 'mock',
+      // "llm" when the server has its own key; otherwise users may supply theirs, else demo data.
+      // The provider and model are deliberately not exposed.
+      llmProvider: this.llm.hasServerKey ? 'llm' : 'mock',
       serverHasKey: this.llm.hasServerKey,
       acceptsUserKey: !this.llm.hasServerKey,
-      model: this.llm.model,
       database: this.connection.readyState === 1 ? 'connected' : 'disconnected',
     };
   }

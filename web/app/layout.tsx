@@ -26,6 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/tutorial" className="text-sm font-medium text-slate-600 hover:text-slate-900">
                 📖 <span className="hidden sm:inline">How to use</span>
               </Link>
+              <Link href="/how-it-works" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+                🔬 <span className="hidden sm:inline">How it works</span>
+              </Link>
               <StatusPill />
             </nav>
           </div>

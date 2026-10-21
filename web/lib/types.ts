@@ -259,11 +259,10 @@ export interface SelectionSummary {
 
 export interface Health {
   status: string;
-  /** "anthropic" when the server has its own key. */
-  llmProvider: 'anthropic' | 'mock';
+  /** "llm" when the server has its own key. */
+  llmProvider: 'llm' | 'mock';
   serverHasKey: boolean;
   acceptsUserKey: boolean;
-  model: string;
   database: 'connected' | 'disconnected';
 }
 

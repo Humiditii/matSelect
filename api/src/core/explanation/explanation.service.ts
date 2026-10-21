@@ -85,7 +85,7 @@ export class ExplanationService {
         `ExplanationService: explanation failed, using template: ${reason}`,
       );
       const fallback = checked(mockExplanation(payload, audience), 'mock');
-      fallback.text = `> Claude's explanation was unavailable (${reason}), so this is the standard summary.\n\n${fallback.text}`;
+      fallback.text = `> The LLM's explanation was unavailable (${reason}), so this is the standard summary.\n\n${fallback.text}`;
       return fallback;
     }
   }

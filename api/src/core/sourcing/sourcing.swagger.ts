@@ -16,7 +16,7 @@ export function SwaggerFindSources() {
     ApiOperation({
       summary: 'Where to buy the top picks in a country',
       description:
-        'With Claude: a live web search localised to the country (and city) finds suppliers, with links. Without a key: availability guidance and search links. Cached per country.',
+        'With the LLM: a live web search localised to the country (and city) finds suppliers, with links. Without a key: availability guidance and search links. Cached per country.',
     }),
     ApiParam({
       name: 'selectionId',
@@ -32,7 +32,7 @@ export function SwaggerFindSources() {
     ApiResponse({ status: 404, description: 'No selection with that id' }),
     ApiResponse({
       status: 502,
-      description: 'Claude or the web search failed',
+      description: 'The LLM or the web search failed',
     }),
   );
 }

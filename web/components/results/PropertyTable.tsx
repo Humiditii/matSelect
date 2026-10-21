@@ -34,7 +34,7 @@ export function PropertyTable({ result }: { result: SelectionResult }) {
   return (
     <>
       <p className="mb-3 text-sm text-slate-600">
-        AI-estimated typical ranges ({result.dataSource === 'mock' ? 'built-in demo data' : 'from Claude'}). Verify with supplier datasheets before
+        AI-estimated typical ranges ({result.dataSource === 'mock' ? 'built-in demo data' : 'from the LLM'}). Verify with supplier datasheets before
         buying.
       </p>
       <div className="mb-3 flex flex-wrap gap-1.5">

@@ -89,7 +89,7 @@ export function ResultsView({ result }: { result: SelectionResult }) {
             <strong>{result.materials.length}</strong> candidates considered · <strong className="text-emerald-700">{result.ranking.length}</strong>{' '}
             fit · <strong className="text-rose-700">{result.rejected.length}</strong> ruled out · <strong>{notEvaluated.length}</strong> not
             evaluated
-            {result.keySource === 'user' && <span className="ml-2 text-xs text-emerald-700">· 🔑 ran with your Claude key</span>}
+            {result.keySource === 'user' && <span className="ml-2 text-xs text-emerald-700">· 🔑 ran with your API key</span>}
           </p>
         </div>
         <div className="flex gap-2 [&>a]:flex-1 sm:[&>a]:flex-none">
@@ -102,9 +102,9 @@ export function ResultsView({ result }: { result: SelectionResult }) {
 
       {result.dataSource === 'mock' && (
         <Banner tone="info" icon="🧪" title="Demo / mock data">
-          <p>No Claude API key was available, so built-in demo materials and template explanations were used. The calculations are real.</p>
+          <p>No LLM API key was available, so built-in demo materials and template explanations were used. The calculations are real.</p>
           <button className="font-semibold text-sky-800 underline" onClick={openKeyDialog}>
-            Add your own Claude API key →
+            Add your own API key →
           </button>
         </Banner>
       )}

@@ -10,8 +10,8 @@ import { cx } from './ui';
 type KeyMode = 'server' | 'user' | 'demo';
 
 const MODE_LABEL: Record<KeyMode, string> = {
-  server: '● Claude connected',
-  user: '● Using your Claude key',
+  server: '● LLM connected',
+  user: '● Using your API key',
   demo: '● Demo data · Add API key',
 };
 
@@ -70,7 +70,7 @@ export function StatusPill() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title={mode === 'server' ? `Claude model: ${health.model} (server key)` : 'Manage your Claude API key'}
+        title={mode === 'server' ? 'The LLM is on for everyone (server key)' : 'Manage your API key'}
         className={cx(
           'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition',
           MODE_STYLE[mode],

@@ -1,6 +1,5 @@
 export const CONFIGS = {
-  // Header the web app uses to send a user's own Claude API key.
-  USER_KEY_HEADER: 'x-anthropic-api-key',
+  USER_KEY_HEADER: 'x-llm-api-key',
   // How many Anthropic clients to keep for user-supplied keys (least recently used are dropped).
   USER_KEY_CLIENT_CACHE: 20,
   DEFAULT_LLM_MODEL: 'claude-opus-5-5',

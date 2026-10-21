@@ -50,7 +50,7 @@ export function demoAdjust(spec: DesignSpec): {
     };
     const plural = unsupported.length > 1;
     notes.push(
-      `The demo data has no values for ${unsupported.map((p) => p.label.toLowerCase()).join(', ')}, so ${plural ? 'those requirements were' : 'that requirement was'} not checked. Add a Claude API key to have every material rated for ${plural ? 'them' : 'it'}.`,
+      `The demo data has no values for ${unsupported.map((p) => p.label.toLowerCase()).join(', ')}, so ${plural ? 'those requirements were' : 'that requirement was'} not checked. Add an LLM API key to have every material rated for ${plural ? 'them' : 'it'}.`,
     );
   }
   return { spec: adjusted, notes };

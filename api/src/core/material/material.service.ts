@@ -103,7 +103,7 @@ export class MaterialService {
         const err = outcome.reason as AppException;
         failures.push(err);
         warnings.push(
-          `Could not get ${FAMILY_LABEL[family].toLowerCase()} candidates from Claude, so that family was skipped (${err?.message ?? String(err)}).`,
+          `Could not get ${FAMILY_LABEL[family].toLowerCase()} candidates from the LLM, so that family was skipped (${err?.message ?? String(err)}).`,
         );
       }
     });
@@ -114,7 +114,7 @@ export class MaterialService {
       const status =
         typeof first?.getStatus === 'function' ? first.getStatus() : 502;
       throw new AppException(
-        `Claude could not supply candidate materials for any family. ${first?.message ?? ''}`.trim(),
+        `The LLM could not supply candidate materials for any family. ${first?.message ?? ''}`.trim(),
         [401, 403, 429].includes(status) ? status : 502,
       );
     }

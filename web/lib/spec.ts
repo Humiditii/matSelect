@@ -10,7 +10,7 @@ export const isTubeSection = (section: Section) => section === 'round_tube' || s
 const QUANTITY_FIELDS = ['load', 'length', 'maxDeflection', 'sectionWidth'];
 const MM_PER_UNIT: Record<string, number> = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 };
 
-/** Writes the answer to a clarifying question into the spec, without asking Claude again. */
+/** Writes the answer to a clarifying question into the spec, without asking the LLM again. */
 export function applyAnswer(spec: DesignSpec, field: string, value: unknown): DesignSpec {
   if (!(field in spec)) return spec;
 

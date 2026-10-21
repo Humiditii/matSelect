@@ -47,8 +47,8 @@ export function mapCustomEnvironments(spec: DesignSpec): {
     implied.forEach((e) => environments.add(e));
     notes.push(
       implied.length
-        ? `Demo mode can't rate materials for “${custom}”, so it was checked as: ${implied.map((e) => ENV_LABEL[e]).join(' + ')}. Add a Claude API key for a material-by-material rating.`
-        : `Demo mode can't rate materials for “${custom}”, and it doesn't match any built-in condition, so it was NOT checked. Add a Claude API key to have every material rated for it.`,
+        ? `Demo mode can't rate materials for “${custom}”, so it was checked as: ${implied.map((e) => ENV_LABEL[e]).join(' + ')}. Add an LLM API key for a material-by-material rating.`
+        : `Demo mode can't rate materials for “${custom}”, and it doesn't match any built-in condition, so it was NOT checked. Add an LLM API key to have every material rated for it.`,
     );
   }
   if (environments.size > 1) environments.delete('indoor');

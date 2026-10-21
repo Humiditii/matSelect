@@ -38,7 +38,7 @@ The single most important rule: **Claude never decides which materials fit or in
 
 ```mermaid
 flowchart LR
-    WEB[Next.js web app] -->|REST /api<br/>optional header x-anthropic-api-key| API[MatSelect API · NestJS]
+    WEB[Next.js web app] -->|REST /api<br/>optional header x-llm-api-key| API[MatSelect API · NestJS]
     API --> SPEC[spec module<br/>description → brief]
     API --> SEL[selection module<br/>orchestration]
     SEL --> MAT[material module<br/>candidates]
@@ -142,7 +142,7 @@ sequenceDiagram
     participant E as engine.runSelection
     participant X as ExplanationService
     participant R as SelectionRepository
-    W->>C: POST /api/selections {spec} (+ x-anthropic-api-key?)
+    W->>C: POST /api/selections {spec} (+ x-llm-api-key?)
     C->>C: ValidationPipe → CreateSelectionDto
     C->>L: resolve(userKey) → LlmContext {apiKey, keySource}
     C->>S: createSelection(spec, ctx)
@@ -162,7 +162,7 @@ Step by step:
 1. **`HttpLogger`** records method, URL, status, size and time. It never logs headers, because they may carry an API key.
 2. **`ThrottlerGuard`** applies the per-IP rate limit (default 30 requests/minute; GET endpoints are exempt).
 3. **`ValidationPipe({ whitelist: true })`** validates the DTO (`CreateSelectionDto` only checks that `spec` is an object).
-4. **The controller** reads the optional `x-anthropic-api-key` header and asks `LlmService.resolve()` which key this request uses (§5).
+4. **The controller** reads the optional `x-llm-api-key` header and asks `LlmService.resolve()` which key this request uses (§5).
 5. **`parseSpec`** validates the brief against the zod `DesignSpec`, applying defaults and checking cross-field rules and units. On failure it returns 400 with `issues: [{ path, message }]` before any money is spent on Claude.
 6. **`MaterialService.getCandidates`** gets candidates. With a key it makes one Claude call per family, all six in parallel. A failed family is skipped with a warning; if every family fails the request returns 502. Without a key it uses the demo set.
 7. **`demoAdjust`** (demo mode only) maps user-typed environments onto built-in ones and drops custom properties the demo data cannot check. It adds a note for each change.
@@ -181,7 +181,7 @@ With Claude, the timing is roughly: candidates 60–75 s (six calls in parallel)
 | Situation | Key used | `keySource` | `dataSource` |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` set in `api/.env` | server key (any user key is ignored) | `server` | `llm` |
-| No server key, header `x-anthropic-api-key: sk-ant-…` sent | the user's key, for this request only | `user` | `llm` |
+| No server key, header `x-llm-api-key: sk-ant-…` sent | the user's key, for this request only | `user` | `llm` |
 | No usable key at all | none — built-in demo data | `none` | `mock` |
 | `LLM_PROVIDER=mock` | none (forces demo data, e.g. for demos and tests) | `none` | `mock` |
 
@@ -561,7 +561,7 @@ All routes are prefixed with `/api`. The full interactive docs are at **`/api-do
 
 | Method | Path | Body | Returns (`data`) |
 |---|---|---|---|
-| GET | `/health` | — | `{ status, llmProvider, serverHasKey, acceptsUserKey, model, database }` |
+| GET | `/health` | — | `{ status, llmProvider, serverHasKey, acceptsUserKey, database }` |
 | GET | `/meta` | — | Enumerations, units, property metadata, default safety factors |
 | POST | `/specs/extract` | `{ text (5–2000 chars), audience? }` | `{ spec, questions[], dataSource }` |
 | POST | `/selections` | `{ spec }` | `SelectionResult` (201) |
@@ -571,7 +571,7 @@ All routes are prefixed with `/api`. The full interactive docs are at **`/api-do
 | POST | `/api-key/verify` | `{ apiKey }` | `{ valid, model, message, serverHasKey }` |
 | POST | `/selections/:selectionId/sourcing` | `{ country (ISO code), city?, refresh? }` | `{ country, countryName, city, items[{ availability, forms, suppliers[{name,url,note}], searchLinks, notes }], dataSource, note }` (cached per country) |
 
-`/specs/extract`, `/selections` and `/selections/:id/explain` accept the optional **`x-anthropic-api-key`** header (§5).
+`/specs/extract`, `/selections` and `/selections/:id/explain` accept the optional **`x-llm-api-key`** header (§5).
 
 ---
 

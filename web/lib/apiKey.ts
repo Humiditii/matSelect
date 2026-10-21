@@ -1,8 +1,8 @@
-// The user's own Claude API key lives only in this browser: in localStorage when they tick
+// The user's own LLM API key lives only in this browser: in localStorage when they tick
 // "Remember on this device", otherwise in sessionStorage so it is forgotten when the tab closes.
-// It is sent in a header on requests that call Claude and the server never stores it.
+// It is sent in a header on requests that call the LLM and the server never stores it.
 const STORAGE_KEY = 'matselect.anthropicKey';
-export const KEY_HEADER = 'x-anthropic-api-key';
+export const KEY_HEADER = 'x-llm-api-key';
 export const KEY_EVENT = 'matselect:key-changed';
 export const OPEN_KEY_DIALOG_EVENT = 'matselect:open-key-dialog';
 

@@ -8,7 +8,7 @@ import { clearUserKey, getUserKey, isKeyRemembered, maskKey, setUserKey } from '
 import { Banner, Button, cx, inputClass } from './ui';
 
 /**
- * Lets the user run MatSelect with their own Claude API key when the server has none.
+ * Lets the user run MatSelect with their own LLM API key when the server has none.
  * The server checks the key with a free call, then it is kept only in this browser.
  */
 export function ApiKeyDialog({
@@ -77,10 +77,10 @@ export function ApiKeyDialog({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="key-title" className="text-lg font-semibold text-slate-900">
-              🔑 Use your own Claude API key
+              🔑 Use your own API key
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              With a key, Claude reads your description and finds materials from across the world and the research literature. Without one, MatSelect uses its built-in demo data.
+              With a key, the LLM reads your description and finds materials from across the world and the research literature. Without one, MatSelect uses its built-in demo data.
             </p>
           </div>
           <button aria-label="Close" onClick={onClose} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -91,7 +91,7 @@ export function ApiKeyDialog({
         {serverHasKey && (
           <div className="mt-4">
             <Banner tone="success" title="This server already has a key">
-              <p>Claude is already on for everyone here, so you don’t need your own key.</p>
+              <p>The LLM is already on for everyone here, so you don’t need your own key.</p>
             </Banner>
           </div>
         )}
@@ -126,7 +126,7 @@ export function ApiKeyDialog({
                 autoComplete="off"
                 spellCheck={false}
                 className={cx(inputClass, 'font-mono')}
-                placeholder="sk-ant-…"
+                placeholder="Paste your API key"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && save()}
@@ -154,7 +154,7 @@ export function ApiKeyDialog({
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-700 hover:underline">
-              Get a key at console.anthropic.com ↗
+              Get an API key ↗
             </a>
             <Button onClick={save} busy={busy} disabled={value.trim().length < 20}>
               Check & save
@@ -163,8 +163,8 @@ export function ApiKeyDialog({
         </div>
 
         <ul className="mt-5 space-y-1 border-t border-slate-100 pt-4 text-xs text-slate-500">
-          <li>🔒 Your key stays in this browser. It’s sent only to the MatSelect server with each request that needs Claude, and the server never saves or logs it.</li>
-          <li>💳 Calls are billed to your Anthropic account — a full selection is about 7 Claude calls.</li>
+          <li>🔒 Your key stays in this browser. It’s sent only to the MatSelect server with each request that needs the LLM, and the server never saves or logs it.</li>
+          <li>💳 Calls are billed to your own API account. A full selection is about 7 LLM calls.</li>
           <li>
             📖 New here? Read the <Link href="/tutorial#api-key" className="underline" onClick={onClose}>tutorial</Link>.
           </li>

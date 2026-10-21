@@ -34,7 +34,7 @@ function saveLastCountry(country: string) {
 }
 
 /**
- * Where to buy the top picks in a chosen country. With a Claude key the server runs a live web search;
+ * Where to buy the top picks in a chosen country. With an LLM key the server runs a live web search;
  * without one it returns general guidance and search links.
  */
 export function WhereToBuy({ result }: { result: SelectionResult }) {
@@ -153,7 +153,7 @@ export function WhereToBuy({ result }: { result: SelectionResult }) {
           ))}
           {sourcing.dataSource === 'mock' && (
             <button className="text-sm font-semibold text-brand-700 underline" onClick={openKeyDialog}>
-              Add a Claude API key for named suppliers →
+              Add an API key for named suppliers →
             </button>
           )}
         </div>

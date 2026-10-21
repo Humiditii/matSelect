@@ -159,7 +159,7 @@ export class SourcingService {
       generatedAt: new Date().toISOString(),
       dataSource: 'mock',
       items,
-      note: 'Demo mode: availability is a general guide and the links open a web search. Add a Claude API key for named suppliers found by live web search.',
+      note: 'Demo mode: availability is a general guide and the links open a web search. Add an LLM API key for named suppliers found by live web search.',
     };
   }
 

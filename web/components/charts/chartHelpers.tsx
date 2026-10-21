@@ -23,7 +23,7 @@ export function useContainerWidth() {
   const [width, setWidth] = useState(640);
   useEffect(() => {
     if (!container) return;
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(280, entry.contentRect.width)));
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, entry.contentRect.width)));
     observer.observe(container);
     return () => observer.disconnect();
   }, [container]);

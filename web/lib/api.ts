@@ -25,7 +25,7 @@ function errorMessage(body: { message?: unknown } | null, status: number): strin
 }
 
 // Successful responses are wrapped as { message, status, statusCode, data }, so we return `data`.
-// `withKey` sends the user's own Claude key, which the server only uses when it has none of its own.
+// `withKey` sends the user's own LLM key, which the server only uses when it has none of its own.
 async function request<T>(path: string, init?: RequestInit & { withKey?: boolean }): Promise<T> {
   const userKey = init?.withKey ? getUserKey() : null;
   let response: Response;
@@ -50,7 +50,7 @@ async function request<T>(path: string, init?: RequestInit & { withKey?: boolean
   return (body && typeof body === 'object' && 'data' in body ? body.data : body) as T;
 }
 
-// True when the server rejected the user's own Claude key.
+// True when the server rejected the user's own LLM key.
 export const isKeyRejected = (error: { status?: number }) => error.status === 401 || error.status === 403;
 
 export const api = {
@@ -70,7 +70,7 @@ export const api = {
       withKey: true,
     }),
   verifyKey: (apiKey: string) =>
-    request<{ valid: boolean; model: string; message: string; serverHasKey: boolean }>('/api-key/verify', {
+    request<{ valid: boolean; message: string; serverHasKey: boolean }>('/api-key/verify', {
       method: 'POST',
       body: JSON.stringify({ apiKey }),
     }),

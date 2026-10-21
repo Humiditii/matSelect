@@ -14,7 +14,7 @@ export const SwaggerUserKeyHeader = () =>
     name: CONFIGS.USER_KEY_HEADER,
     required: false,
     description:
-      "The user's own Claude API key. Used only when the server has no key; never stored.",
+      "The user's own LLM API key. Used only when the server has no key; never stored.",
   });
 
 export function SwaggerExtractSpec() {
@@ -24,7 +24,7 @@ export function SwaggerExtractSpec() {
     ApiOperation({
       summary: 'Turn a description into a design brief',
       description:
-        'Claude (or the demo rules when no key is available) reads the description and returns the brief: function, goal, requirements, assumptions and at most two questions.',
+        'The LLM (or the demo rules when no key is available) reads the description and returns the brief: function, goal, requirements, assumptions and at most two questions.',
     }),
     ApiBody({ type: ExtractSpecDto }),
     ApiResponse({
@@ -36,6 +36,6 @@ export function SwaggerExtractSpec() {
       status: 401,
       description: "The user's own API key was rejected",
     }),
-    ApiResponse({ status: 502, description: 'Claude failed' }),
+    ApiResponse({ status: 502, description: 'The LLM failed' }),
   );
 }

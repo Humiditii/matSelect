@@ -63,7 +63,7 @@ function Home() {
     api.listSelections().then(setRecent).catch(() => undefined);
     api
       .health()
-      .then((health) => setLive(health.llmProvider === 'anthropic'))
+      .then((health) => setLive(health.llmProvider === 'llm'))
       .catch(() => undefined);
   }, []);
 

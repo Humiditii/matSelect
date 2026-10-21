@@ -102,7 +102,7 @@ Design decisions that go beyond the spec are marked `// DECISION:` in the code. 
 
 | Method | Path | |
 |---|---|---|
-| GET | `/api/health` | `{status, llmProvider, model, store}` |
+| GET | `/api/health` | `{status, llmProvider, serverHasKey, acceptsUserKey, database}` |
 | GET | `/api/meta` | Enumerations, default safety factors, units |
 | POST | `/api/specs/extract` | `{text, audience}` → `{spec, questions[]}` |
 | POST | `/api/selections` | `{spec}` → full result incl. explanation (30–90 s with Claude) |

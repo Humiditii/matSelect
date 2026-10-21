@@ -6,7 +6,8 @@ export class ApiKeyService {
   constructor(private readonly llm: LlmService) {}
 
   async verifyApiKey(apiKey: string) {
-    const check = await this.llm.verifyKey(apiKey);
+    // The model name stays on the server.
+    const { model: _model, ...check } = await this.llm.verifyKey(apiKey);
     const serverHasKey = this.llm.hasServerKey;
     const message = serverHasKey
       ? `${check.message} Note: this server already has its own key, so yours will not be used.`

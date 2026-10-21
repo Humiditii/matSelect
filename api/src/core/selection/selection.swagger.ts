@@ -16,7 +16,7 @@ export function SwaggerCreateSelection() {
     ApiOperation({
       summary: 'Run a material selection',
       description:
-        'Gets candidates (Claude: 6 parallel calls; demo: built-in set), screens, sizes/scores, runs the Monte Carlo, ranks, writes the explanation for spec.audience and saves the result. 30–90 s with Claude.',
+        'Gets candidates (LLM: 6 parallel calls; demo: built-in set), screens, sizes/scores, runs the Monte Carlo, ranks, writes the explanation for spec.audience and saves the result. 30–90 s with the LLM.',
     }),
     ApiBody({ type: CreateSelectionDto }),
     ApiResponse({
@@ -33,7 +33,7 @@ export function SwaggerCreateSelection() {
     }),
     ApiResponse({
       status: 502,
-      description: 'Claude could not supply candidates for any family',
+      description: 'The LLM could not supply candidates for any family',
     }),
   );
 }

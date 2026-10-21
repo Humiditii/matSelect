@@ -15,7 +15,7 @@ export class AppController {
   @ApiTags('App')
   @ApiOperation({
     summary:
-      'Service status: Claude mode, whether user keys are accepted, database',
+      'Service status: LLM mode, whether user keys are accepted, database',
   })
   @ApiResponse({ status: 200, description: 'success' })
   @Get('health')

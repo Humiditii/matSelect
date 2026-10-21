@@ -11,7 +11,7 @@ const STAGES = [
   'Ranking and writing the explanation',
 ];
 
-// Seconds after which each stage is expected to be done. With Claude, fetching candidates takes
+// Seconds after which each stage is expected to be done. With the LLM, fetching candidates takes
 // most of the minute; in demo mode the whole run is almost instant.
 const STAGE_END_SECONDS_LIVE = [55, 58, 60, 62, 90];
 const STAGE_END_SECONDS_DEMO = [0.4, 0.6, 0.8, 1, 1.4];

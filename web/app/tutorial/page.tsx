@@ -5,7 +5,7 @@ import { OpenKeyDialogButton } from './OpenKeyDialogButton';
 
 export const metadata: Metadata = {
   title: 'How to use MatSelect',
-  description: 'A step-by-step guide: describe your part, check the brief, read the results and use your own Claude API key.',
+  description: 'A step-by-step guide: describe your part, check the brief, read the results and use your own API key.',
 };
 
 const SECTIONS = [
@@ -93,6 +93,9 @@ export default function TutorialPage() {
           <Link href="/" className="mt-4 hidden rounded-xl bg-brand-600 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700 lg:block">
             Start a selection →
           </Link>
+          <Link href="/how-it-works" className="mt-3 hidden text-sm font-medium text-brand-700 hover:underline lg:block">
+            How it works, in depth →
+          </Link>
         </nav>
       </aside>
 
@@ -124,7 +127,7 @@ export default function TutorialPage() {
             ))}
           </div>
           <Callout icon="🧠">
-            <strong>Who decides?</strong> An AI (Claude) reads your description, suggests candidate materials with typical property values, and writes the explanation. But the <strong>ranking is never the AI’s opinion</strong>: every “fits / doesn’t fit” and every position in the list comes from engineering calculations, and every number in the explanation is checked against those calculations.
+            <strong>Who decides?</strong> An AI (a large language model, or LLM) reads your description, suggests candidate materials with typical property values, and writes the explanation. But the <strong>ranking is never the AI’s opinion</strong>: every “fits / doesn’t fit” and every position in the list comes from engineering calculations, and every number in the explanation is checked against those calculations.
           </Callout>
         </Section>
 
@@ -139,7 +142,7 @@ export default function TutorialPage() {
               <p>Remove anything that’s wrong, add anything missing in plain words (“it must survive 600 °C”), then press <kbd>Find materials →</kbd>.</p>
             </Step>
             <Step number={3} title="Read the results">
-              <p>Look at the top picks, read the explanation, and check why your “obvious” choice was ruled out. Done in seconds with demo data, about a minute with Claude.</p>
+              <p>Look at the top picks, read the explanation, and check why your “obvious” choice was ruled out. Done in seconds with demo data, about a minute with the LLM.</p>
             </Step>
           </div>
           <p className="mt-4">
@@ -210,7 +213,7 @@ export default function TutorialPage() {
               <strong>Must</strong> — hard requirements. Each row has a minimum and/or maximum you can edit, e.g. friction coefficient 0.3 to 0.5. Press ✕ to remove one. Pills underneath cover temperature, “won’t shatter”, tools and safety.
             </li>
             <li>
-              <strong>Where it’s used</strong> — tap the conditions that apply. If yours isn’t listed, type it in the box (“next to a chlorinated pool”): with Claude, every material is rated for it.
+              <strong>Where it’s used</strong> — tap the conditions that apply. If yours isn’t listed, type it in the box (“next to a chlorinated pool”): with the LLM, every material is rated for it.
             </li>
             <li>
               <strong>Size it (optional)</strong> — only for parts that carry a load (shelves, beams, legs, rods, shafts). Add the load and span to get the actual part size, its mass and its cost.
@@ -252,7 +255,7 @@ export default function TutorialPage() {
               <strong>⚠️ Notes</strong> — e.g. two materials are a close call, or a requirement couldn’t be checked.
             </li>
             <li>
-              <strong>🧪 Demo data</strong> — shown when no Claude key was available.
+              <strong>🧪 Demo data</strong> — shown when no LLM key was available.
             </li>
           </ul>
           <h3>How it was ranked</h3>
@@ -346,33 +349,33 @@ export default function TutorialPage() {
           </p>
           <h3>Where to buy</h3>
           <p>
-            Pick your country (and optionally your city) in the brief or in the <strong>Where to buy</strong> panel on the results page, and press <kbd>Find suppliers</kbd>. With Claude, a live web search finds suppliers, stockists and markets for the top three picks, with links. When no supplier names the exact grade, it lists general stockists of that kind of material and says so. Without a key you get availability guidance and ready-made search links. Only the country and city are sent.
+            Pick your country (and optionally your city) in the brief or in the <strong>Where to buy</strong> panel on the results page, and press <kbd>Find suppliers</kbd>. With the LLM, a live web search finds suppliers, stockists and markets for the top three picks, with links. When no supplier names the exact grade, it lists general stockists of that kind of material and says so. Without a key you get availability guidance and ready-made search links. Only the country and city are sent.
           </p>
           <TryIt text="A bookshelf board 90 cm long and 25 cm deep for about 30 kg of books, screwed to wall brackets. I live in Lagos, Nigeria and want it to be eco-friendly." label="Try an eco-friendly shelf in Lagos" />
         </Section>
 
-        <Section id="api-key" title="Using your own Claude API key">
+        <Section id="api-key" title="Using your own API key">
           <p>MatSelect works in two modes:</p>
           <ul>
             <li>
               <strong>Demo mode</strong> (no key) — a built-in list of about 70 curated materials, simple rules to read your description, and template explanations. Good for learning the app; the calculations are still real.
             </li>
             <li>
-              <strong>Claude mode</strong> — Claude reads any description, proposes ~60 candidates specific to your part (including materials from the research literature), supplies application-specific data such as friction or wear rate, and writes the explanations.
+              <strong>LLM mode</strong> — the LLM reads any description, proposes ~60 candidates specific to your part (including materials from the research literature), supplies application-specific data such as friction or wear rate, and writes the explanations.
             </li>
           </ul>
           <p>
-            If the server already has a key, the badge in the top-right says <strong>● Claude connected</strong> and you don’t need one. Otherwise it says <strong>● Demo data · Add API key</strong>.
+            If the server already has a key, the badge in the top-right says <strong>● LLM connected</strong> and you don’t need one. Otherwise it says <strong>● Demo data · Add API key</strong>.
           </p>
           <h3>Add your key</h3>
           <div className="not-prose space-y-3">
             <Step number={1} title="Get a key">
               <p>
-                Sign in at{' '}
+                Sign in at your{' '}
                 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-brand-700 underline">
-                  console.anthropic.com
+                  LLM provider’s console
                 </a>
-                , add a payment method under <em>Billing</em>, then <em>API Keys → Create Key</em>. Copy it — it starts with <code>sk-ant-</code> and is shown only once.
+                , add a payment method under <em>Billing</em>, then <em>API Keys → Create Key</em>. Copy it, because it is shown only once.
               </p>
             </Step>
             <Step number={2} title="Open the key settings">
@@ -387,7 +390,7 @@ export default function TutorialPage() {
             </Step>
           </div>
           <Callout icon="🔒">
-            Your key stays in your browser. It is sent to the MatSelect server only with requests that need Claude, used for that request, and never saved or logged. Remove it any time from the same dialog. Usage is billed to your Anthropic account — one full selection is about 7 Claude calls.
+            Your key stays in your browser. It is sent to the MatSelect server only with requests that need the LLM, used for that request, and never saved or logged. Remove it any time from the same dialog. Usage is billed to your own API account. One full selection is about 7 LLM calls.
           </Callout>
           <p>If your key is rejected (expired, revoked or out of credit), MatSelect tells you and opens the key settings so you can replace it.</p>
         </Section>
@@ -421,6 +424,9 @@ export default function TutorialPage() {
         </Section>
 
         <Section id="ideas" title="Key ideas, explained">
+          <p>
+            Want the full story, with the physics and demos you can play with? Read <Link href="/how-it-works">How MatSelect works</Link>.
+          </p>
           <dl className="not-prose space-y-4 text-sm text-slate-700">
             {[
               ['Material index', 'A formula that measures how good a material is for one job. For a light, stiff beam it’s E^(1/2)/ρ (stiffness and density); for a long-lasting brake pad it’s 1/wear rate. Higher is better. It comes from the physics of the part, so it rewards exactly what matters.'],
@@ -429,7 +435,7 @@ export default function TutorialPage() {
               ['Safety factor', 'Load-bearing parts are sized to carry more than the real load: ×1.5 for general use, ×2.5 for things that carry people, ×3 for lifting.'],
               ['Chance it’s the best', 'MatSelect re-runs the ranking 1,000 times, each time picking property values from within each material’s range. The percentage is how often a material came first.'],
               ['Likely range (p10–p90)', 'Across those runs, 80% of the results fell inside this range.'],
-              ['AI-estimated data & confidence', 'Property values come from Claude’s knowledge (or the demo set), not a certified database. Each material has a confidence level; always confirm with the supplier’s datasheet.'],
+              ['AI-estimated data & confidence', 'Property values come from the LLM’s knowledge (or the demo set), not a certified database. Each material has a confidence level; always confirm with the supplier’s datasheet.'],
               ['Number check', 'After the explanation is written, code checks that every number in it appears in the calculation results. That’s the ✓ badge.'],
             ].map(([term, definition]) => (
               <div key={term} className="rounded-xl bg-slate-50 p-3">
@@ -452,7 +458,7 @@ export default function TutorialPage() {
               <p>Look at the most common reasons in <strong>Ruled out</strong> and relax the strictest requirement — usually tools, environment, a temperature or a budget. Press <kbd>✏️ Change requirements</kbd>.</p>
             </Faq>
             <Faq question="Why do I get different materials when I run it again?">
-              <p>With Claude, the list of candidates can vary a little between runs. For the same candidates, the calculation is fully repeatable.</p>
+              <p>With the LLM, the list of candidates can vary a little between runs. For the same candidates, the calculation is fully repeatable.</p>
             </Faq>
             <Faq question="Can I trust the numbers?">
               <p>The calculations are deterministic and tested. The property data is AI-estimated: treat it as a well-informed starting point and confirm the final choice with supplier datasheets — and, for anything safety-critical, with a qualified engineer.</p>
@@ -464,14 +470,14 @@ export default function TutorialPage() {
               <p>The backend isn’t running. Start it with <code>npm run dev</code> in the project folder (MongoDB must be running too).</p>
             </Faq>
             <Faq question="My API key was rejected.">
-              <p>Check it was copied completely, that it hasn’t been revoked, and that your Anthropic account has credit. Then paste it again in the key settings.</p>
+              <p>Check it was copied completely, that it hasn’t been revoked, and that your API account has credit. Then paste it again in the key settings.</p>
             </Faq>
           </div>
         </Section>
 
         <Section id="limits" title="What it can’t do">
           <ul>
-            <li>Property data comes from Claude’s knowledge or the demo set — not a verified database.</li>
+            <li>Property data comes from the LLM’s knowledge or the demo set — not a verified database.</li>
             <li>Load-bearing parts use simple idealisations (one critical part, standard load cases). There’s no FEA, and joints and fatigue aren’t checked.</li>
             <li>Results are guidance, not certified design. Anything that carries people or lifts loads must follow the relevant standard and be reviewed by a qualified engineer.</li>
           </ul>

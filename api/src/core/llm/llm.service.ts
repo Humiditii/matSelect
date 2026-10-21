@@ -2,7 +2,7 @@
  * Wrapper around Claude for structured (JSON Schema constrained) calls, plain-text calls and web search.
  *
  * The key is chosen per request (see `resolve`): the server's ANTHROPIC_API_KEY if configured, otherwise
- * a key the user sent from the web app (header `x-anthropic-api-key`), otherwise none, and callers then
+ * a key the user sent from the web app (header `x-llm-api-key`), otherwise none, and callers then
  * use the built-in demo data. User keys only live in memory (the request and a small LRU of clients);
  * they are never stored or logged.
  *
@@ -87,8 +87,7 @@ export class LlmService {
       return {
         valid: false,
         model: this.model,
-        message:
-          'That does not look like a Claude API key (it should start with "sk-ant-").',
+        message: 'That does not look like a valid API key.',
       };
     }
     try {
@@ -96,15 +95,14 @@ export class LlmService {
       return {
         valid: true,
         model: this.model,
-        message: `Key works with ${this.model}.`,
+        message: 'Key works.',
       };
     } catch (err) {
       if (err instanceof Anthropic.AuthenticationError)
         return {
           valid: false,
           model: this.model,
-          message:
-            'This key was rejected by Anthropic. Check it was copied completely.',
+          message: 'This key was rejected. Check it was copied completely.',
         };
       if (
         err instanceof Anthropic.PermissionDeniedError ||
@@ -113,11 +111,11 @@ export class LlmService {
         return {
           valid: false,
           model: this.model,
-          message: `This key cannot use the model ${this.model}.`,
+          message: 'This key cannot use the model this app needs.',
         };
       if (err instanceof Anthropic.APIConnectionError)
         throw new AppException(
-          'Could not reach the Claude API to check the key. Check the network connection.',
+          'Could not reach the LLM service to check the key. Check the network connection.',
           502,
         );
       throw new AppException(
@@ -157,7 +155,7 @@ export class LlmService {
       );
     }
     throw new AppException(
-      `Claude's answer for ${call.label} did not match the expected format, even after a retry.`,
+      `The LLM's answer for ${call.label} did not match the expected format, even after a retry.`,
       502,
     );
   }
@@ -192,7 +190,7 @@ export class LlmService {
   private requireKey(ctx: LlmContextI): string {
     if (!ctx.apiKey)
       throw new AppException(
-        'No Claude API key is available for this request.',
+        'No LLM API key is available for this request.',
         400,
       );
     return ctx.apiKey;
@@ -230,7 +228,7 @@ export class LlmService {
       .map((b) => b.text)
       .join('');
     if (!text.trim())
-      throw new AppException(`Claude returned an empty ${label} answer.`, 502);
+      throw new AppException(`The LLM returned an empty ${label} answer.`, 502);
     return text;
   }
 
@@ -269,13 +267,13 @@ export class LlmService {
       this.logUsage(label, ctx, msg, started);
       if (msg.stop_reason === 'refusal') {
         throw new AppException(
-          `Claude declined the ${label} request${msg.stop_details?.explanation ? `: ${msg.stop_details.explanation}` : '.'}`,
+          `The LLM declined the ${label} request${msg.stop_details?.explanation ? `: ${msg.stop_details.explanation}` : '.'}`,
           502,
         );
       }
       if (msg.stop_reason === 'max_tokens')
         throw new AppException(
-          `Claude's ${label} answer was cut off (output limit reached).`,
+          `The LLM's ${label} answer was cut off (output limit reached).`,
           502,
         );
       return this.replyText(label, msg);
@@ -304,7 +302,7 @@ export class LlmService {
           return this.complete(ctx, label, system, user, maxTokens, schema);
         }
         throw new AppException(
-          `Claude rejected the ${label} request: ${err.message}`,
+          `The LLM rejected the ${label} request: ${err.message}`,
           502,
         );
       }
@@ -324,12 +322,12 @@ export class LlmService {
     // A bad user key is for the user to fix, so it gets a 401 and the web app asks for a new one.
     if (err instanceof Anthropic.AuthenticationError)
       return new AppException(
-        `${whose} Claude API key was rejected. ${isUserKey ? 'Update it in the key settings.' : 'Check ANTHROPIC_API_KEY in api/.env.'}`,
+        `${whose} API key was rejected. ${isUserKey ? 'Update it in the key settings.' : 'Check the server key configuration.'}`,
         isUserKey ? 401 : 502,
       );
     if (err instanceof Anthropic.PermissionDeniedError)
       return new AppException(
-        `${whose} Claude API key cannot use model ${this.model}.`,
+        `${whose} API key cannot use the model this app needs.`,
         isUserKey ? 403 : 502,
       );
     if (err instanceof Anthropic.NotFoundError)
@@ -339,26 +337,26 @@ export class LlmService {
       );
     if (err instanceof Anthropic.RateLimitError)
       return new AppException(
-        'Claude rate limit reached. Please wait a minute and try again.',
+        'LLM rate limit reached. Please wait a minute and try again.',
         429,
       );
     if (err instanceof Anthropic.APIConnectionTimeoutError)
       return new AppException(
-        `Claude did not answer the ${label} request in time.`,
+        `The LLM did not answer the ${label} request in time.`,
         504,
       );
     if (err instanceof Anthropic.APIConnectionError)
       return new AppException(
-        'Could not reach the Claude API. Check the network connection.',
+        'Could not reach the LLM service. Check the network connection.',
         502,
       );
     if (err instanceof Anthropic.APIError)
       return new AppException(
-        `Claude API error ${err.status ?? ''} during ${label}: ${err.message}`,
+        `LLM service error ${err.status ?? ''} during ${label}: ${err.message}`,
         502,
       );
     return new AppException(
-      `Unexpected error calling Claude for ${label}: ${(err as Error).message}`,
+      `Unexpected error calling the LLM for ${label}: ${(err as Error).message}`,
       502,
     );
   }
@@ -423,10 +421,10 @@ export class LlmService {
           continue;
         }
         if (msg.stop_reason === 'refusal')
-          throw new AppException(`Claude declined the ${label} request.`, 502);
+          throw new AppException(`The LLM declined the ${label} request.`, 502);
         return this.replyText(label, msg);
       }
-      throw new AppException(`Claude's ${label} search did not finish.`, 504);
+      throw new AppException(`The LLM's ${label} search did not finish.`, 504);
     } catch (err) {
       // The search provider doesn't accept every country as a location (e.g. "NG"). Search again
       // without the location hint; the prompt already names the country and city.
