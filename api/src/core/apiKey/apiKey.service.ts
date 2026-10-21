@@ -6,13 +6,11 @@ export class ApiKeyService {
   constructor(private readonly llm: LlmService) {}
 
   async verifyApiKey(apiKey: string) {
-    const r = await this.llm.verifyKey(apiKey);
-    return {
-      ...r,
-      serverHasKey: this.llm.hasServerKey,
-      ...(this.llm.hasServerKey && {
-        message: `${r.message} Note: this server already has its own key, so yours will not be used.`,
-      }),
-    };
+    const check = await this.llm.verifyKey(apiKey);
+    const serverHasKey = this.llm.hasServerKey;
+    const message = serverHasKey
+      ? `${check.message} Note: this server already has its own key, so yours will not be used.`
+      : check.message;
+    return { ...check, message, serverHasKey };
   }
 }

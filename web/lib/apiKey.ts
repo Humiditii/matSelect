@@ -1,16 +1,15 @@
-/**
- * The user's own Claude API key, kept only in this browser.
- * "Remember on this device" → localStorage; otherwise sessionStorage (forgotten when the tab closes).
- * It is sent to the MatSelect API in a header on requests that call Claude, and is never stored by the server.
- */
+// The user's own Claude API key lives only in this browser: in localStorage when they tick
+// "Remember on this device", otherwise in sessionStorage so it is forgotten when the tab closes.
+// It is sent in a header on requests that call Claude and the server never stores it.
 const STORAGE_KEY = 'matselect.anthropicKey';
 export const KEY_HEADER = 'x-anthropic-api-key';
 export const KEY_EVENT = 'matselect:key-changed';
 export const OPEN_KEY_DIALOG_EVENT = 'matselect:open-key-dialog';
 
-function safe<T>(fn: () => T, fallback: T): T {
+// Storage access throws when the browser blocks it.
+function tryStorage<T>(action: () => T, fallback: T): T {
   try {
-    return fn();
+    return action();
   } catch {
     return fallback;
   }
@@ -18,15 +17,15 @@ function safe<T>(fn: () => T, fallback: T): T {
 
 export function getUserKey(): string | null {
   if (typeof window === 'undefined') return null;
-  return safe(() => sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY), null);
+  return tryStorage(() => sessionStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(STORAGE_KEY), null);
 }
 
 export function isKeyRemembered(): boolean {
-  return safe(() => !!localStorage.getItem(STORAGE_KEY), false);
+  return tryStorage(() => !!localStorage.getItem(STORAGE_KEY), false);
 }
 
 export function setUserKey(key: string, remember: boolean) {
-  safe(() => {
+  tryStorage(() => {
     clearStorage();
     (remember ? localStorage : sessionStorage).setItem(STORAGE_KEY, key.trim());
   }, undefined);
@@ -34,7 +33,7 @@ export function setUserKey(key: string, remember: boolean) {
 }
 
 export function clearUserKey() {
-  safe(clearStorage, undefined);
+  tryStorage(clearStorage, undefined);
   window.dispatchEvent(new Event(KEY_EVENT));
 }
 
@@ -45,5 +44,5 @@ function clearStorage() {
 
 export const openKeyDialog = () => window.dispatchEvent(new Event(OPEN_KEY_DIALOG_EVENT));
 
-/** "sk-ant-api03-…AbCd" — enough to recognise it, never the whole key. */
-export const maskKey = (k: string) => `${k.slice(0, 12)}…${k.slice(-4)}`;
+// Shows enough to recognise the key ("sk-ant-api03-…AbCd") without revealing it.
+export const maskKey = (key: string) => `${key.slice(0, 12)}…${key.slice(-4)}`;

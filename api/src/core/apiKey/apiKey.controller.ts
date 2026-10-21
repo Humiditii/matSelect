@@ -16,9 +16,9 @@ export class ApiKeyController {
   @HttpCode(200)
   async verifyApiKey(
     @Res() res: Response,
-    @Body() b: VerifyApiKeyDto,
+    @Body() body: VerifyApiKeyDto,
   ): Promise<Response> {
-    const data = await this.apiKeyService.verifyApiKey(b.apiKey);
+    const data = await this.apiKeyService.verifyApiKey(body.apiKey);
 
     return res.status(200).json(this.success('success', 200, data));
   }

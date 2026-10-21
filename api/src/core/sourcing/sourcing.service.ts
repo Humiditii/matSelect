@@ -14,15 +14,58 @@ import { SelectionRepository } from '../selection/repository/selection.repositor
 import { SelectionService } from '../selection/selection.service';
 import { FindSourcesDto } from './dto/sourcing.dto';
 
-/** How many of the top picks to find suppliers for. */
-const TOP_N = 3;
+// How many of the top picks to find suppliers for.
+const PICKS_TO_SOURCE = 3;
 
-/** Commodity materials stocked by ordinary builders' merchants, hardware and plastics stockists almost everywhere. */
-const COMMON =
+// Commodity materials stocked almost everywhere by builders' merchants, hardware shops and plastics stockists.
+const COMMON_MATERIALS =
   /mild steel|galvanised|stainless|aluminium|aluminum|copper|brass|pvc|polyethylene|polypropylene|acrylic|polycarbonate|pine|spruce|plywood|mdf|oak|concrete|float glass|toughened|polystyrene|rubber|epdm|fibreglass|glass fibre \/ polyester|pla\b|petg|abs\b|nylon/i;
-/** Materials usually made by a few specialist producers and often imported. */
-const RARE =
+// Materials usually made by a few specialist producers and often imported.
+const RARE_MATERIALS =
   /titanium|carbon-ceramic|carbon-carbon|c\/sic|aramid|zirconia|silicon carbide|aerogel|metal-matrix|flax/i;
+
+type Availability = NonNullable<SourcingItemI['availability']>;
+
+const DEMO_AVAILABILITY_NOTES: Record<Availability, string> = {
+  'widely available':
+    'Usually stocked by builders’ merchants, metal or plastics stockists and hardware shops.',
+  'likely imported':
+    'Made by a few specialist producers; expect to order from a distributor or import it.',
+  'specialist suppliers':
+    'Available from specialist distributors; ask for the grade by name.',
+};
+
+function guessAvailability(materialName: string): Availability {
+  if (COMMON_MATERIALS.test(materialName)) return 'widely available';
+  if (RARE_MATERIALS.test(materialName)) return 'likely imported';
+  return 'specialist suppliers';
+}
+
+const nameWithGrade = (pick: RankedMaterial) =>
+  pick.grade ? `${pick.name} (${pick.grade})` : pick.name;
+
+// Search text for a material, e.g. "Aluminium 6061-T6".
+const searchName = (pick: RankedMaterial) =>
+  pick.grade ? `${pick.name} ${pick.grade}` : pick.name;
+
+const placeName = (country: string, city: string | null) =>
+  city ? `${city}, ${countryName(country)}` : countryName(country);
+
+const googleSearchUrl = (query: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent(query.replace(/\s+/g, ' '))}`;
+
+function searchLinks(name: string, form: string | undefined, place: string) {
+  return [
+    {
+      label: `Suppliers in ${place}`,
+      url: googleSearchUrl(`${name} ${form ?? ''} supplier ${place}`),
+    },
+    {
+      label: 'Price',
+      url: googleSearchUrl(`${name} ${form ?? ''} price ${place}`),
+    },
+  ];
+}
 
 const SourcingOutput = z.object({
   items: z.array(
@@ -56,85 +99,57 @@ export class SourcingService {
     private readonly logger: AppLoggerService,
   ) {}
 
-  /** Suppliers / availability for the top picks in a country. Cached per country (and city). */
+  // Suppliers and availability of the top picks in a country. Saved per country, for one city at a time.
   async findSources(
     id: string,
-    p: FindSourcesDto,
+    request: FindSourcesDto,
     ctx: LlmContextI,
   ): Promise<SourcingResultI> {
     const result = await this.selectionService.getSelectionById(id);
-    const city = p.city?.trim() || null;
-    const cached = result.sourcing?.[p.country];
+    const city = request.city?.trim() || null;
+    const cached = result.sourcing?.[request.country];
     if (
-      !p.refresh &&
+      !request.refresh &&
       cached &&
       cached.city === city &&
       (cached.dataSource === 'llm' || !this.llm.isLive(ctx))
     )
       return cached;
 
-    const picks = result.ranking.slice(0, TOP_N);
+    const picks = result.ranking.slice(0, PICKS_TO_SOURCE);
     const sourcing = this.llm.isLive(ctx)
-      ? await this.liveSources(result, picks, p.country, city, ctx)
-      : this.demoSources(result, picks, p.country, city);
+      ? await this.liveSources(result, picks, request.country, city, ctx)
+      : this.demoSources(result, picks, request.country, city);
 
     await this.selectionRepo.update(id, {
-      $set: { [`sourcing.${p.country}`]: sourcing },
+      $set: { [`sourcing.${request.country}`]: sourcing },
     });
     return sourcing;
   }
 
-  // -------------------------------------------------------------------------
-  private searchLinks(name: string, form: string | undefined, place: string) {
-    const q = (s: string) =>
-      `https://www.google.com/search?q=${encodeURIComponent(s)}`;
-    return [
-      {
-        label: `Suppliers in ${place}`,
-        url: q(`${name} ${form ?? ''} supplier ${place}`.replace(/\s+/g, ' ')),
-      },
-      {
-        label: 'Price',
-        url: q(`${name} ${form ?? ''} price ${place}`.replace(/\s+/g, ' ')),
-      },
-    ];
+  private materialFor(result: SelectionResult, pick: RankedMaterial) {
+    return result.materials.find((m) => m.id === pick.materialId);
   }
 
-  private materialFor(result: SelectionResult, r: RankedMaterial) {
-    return result.materials.find((m) => m.id === r.materialId);
-  }
-
-  /** No key: availability from simple rules, plus search links the user can follow. */
+  // Without a key: availability from simple rules, plus search links the user can follow.
   private demoSources(
     result: SelectionResult,
     picks: RankedMaterial[],
     country: string,
     city: string | null,
   ): SourcingResultI {
-    const place = city
-      ? `${city}, ${countryName(country)}`
-      : countryName(country);
-    const items: SourcingItemI[] = picks.map((r) => {
-      const m = this.materialFor(result, r);
-      const label = r.grade ? `${r.name} ${r.grade}` : r.name;
-      const availability = COMMON.test(r.name)
-        ? 'widely available'
-        : RARE.test(r.name)
-          ? 'likely imported'
-          : 'specialist suppliers';
+    const place = placeName(country, city);
+    const items: SourcingItemI[] = picks.map((pick) => {
+      const material = this.materialFor(result, pick);
+      const availability = guessAvailability(pick.name);
       return {
-        materialId: r.materialId,
-        name: r.grade ? `${r.name} (${r.grade})` : r.name,
+        materialId: pick.materialId,
+        name: nameWithGrade(pick),
         availability,
-        forms: m?.forms ?? [],
+        forms: material?.forms ?? [],
         suppliers: [],
-        searchLinks: this.searchLinks(label, m?.forms?.[0], place),
-        notes:
-          availability === 'widely available'
-            ? 'Usually stocked by builders’ merchants, metal or plastics stockists and hardware shops.'
-            : availability === 'likely imported'
-              ? 'Made by a few specialist producers; expect to order from a distributor or import it.'
-              : 'Available from specialist distributors; ask for the grade by name.',
+        searchLinks: searchLinks(searchName(pick), material?.forms?.[0], place),
+        notes: DEMO_AVAILABILITY_NOTES[availability],
       };
     });
     return {
@@ -148,7 +163,7 @@ export class SourcingService {
     };
   }
 
-  /** With a key: one Claude call with live web search localised to the country, returning suppliers with links. */
+  // With a key: one Claude call with live web search in the country, returning suppliers with links.
   private async liveSources(
     result: SelectionResult,
     picks: RankedMaterial[],
@@ -156,13 +171,11 @@ export class SourcingService {
     city: string | null,
     ctx: LlmContextI,
   ): Promise<SourcingResultI> {
-    const place = city
-      ? `${city}, ${countryName(country)}`
-      : countryName(country);
+    const place = placeName(country, city);
     const list = picks
-      .map((r, i) => {
-        const m = this.materialFor(result, r);
-        return `${i + 1}. ${r.name}${r.grade ? ` (${r.grade})` : ''} — forms: ${(m?.forms ?? []).join(', ') || 'any'}${r.sizing ? `; needed size: ${r.sizing.dimension}` : ''}`;
+      .map((pick, i) => {
+        const material = this.materialFor(result, pick);
+        return `${i + 1}. ${nameWithGrade(pick)} — forms: ${(material?.forms ?? []).join(', ') || 'any'}${pick.sizing ? `; needed size: ${pick.sizing.dimension}` : ''}`;
       })
       .join('\n');
 
@@ -188,40 +201,36 @@ Keep the materials in the given order. At most 4 suppliers per material.`;
     let parsed: z.infer<typeof SourcingOutput> | null = null;
     try {
       parsed = SourcingOutput.parse(JSON.parse(extractJson(text)));
-    } catch (e) {
+    } catch (err) {
       this.logger.warn(
-        `SourcingService: could not parse sourcing answer (${(e as Error).message})`,
+        `SourcingService: could not parse sourcing answer (${(err as Error).message})`,
       );
     }
 
-    const isUrl = (u: string) => /^https?:\/\/[^\s]+$/i.test(u.trim());
-    const items: SourcingItemI[] = picks.map((r, i) => {
-      const m = this.materialFor(result, r);
-      const got = parsed?.items[i];
+    const isUrl = (url: string) => /^https?:\/\/[^\s]+$/i.test(url.trim());
+    const items: SourcingItemI[] = picks.map((pick, i) => {
+      const material = this.materialFor(result, pick);
+      const found = parsed?.items[i];
+      const fallbackNote = parsed
+        ? ''
+        : 'The search answer could not be read; use the search links below.';
       return {
-        materialId: r.materialId,
-        name: r.grade ? `${r.name} (${r.grade})` : r.name,
-        availability: got?.availability ?? null,
-        forms: got?.forms?.length ? got.forms.slice(0, 6) : (m?.forms ?? []),
-        suppliers: (got?.suppliers ?? [])
-          .filter((s) => isUrl(s.url))
+        materialId: pick.materialId,
+        name: nameWithGrade(pick),
+        availability: found?.availability ?? null,
+        forms: found?.forms?.length
+          ? found.forms.slice(0, 6)
+          : (material?.forms ?? []),
+        suppliers: (found?.suppliers ?? [])
+          .filter((supplier) => isUrl(supplier.url))
           .slice(0, 4)
-          .map((s) => ({
-            name: s.name.slice(0, 120),
-            url: s.url.trim(),
-            note: s.note.slice(0, 200),
+          .map((supplier) => ({
+            name: supplier.name.slice(0, 120),
+            url: supplier.url.trim(),
+            note: supplier.note.slice(0, 200),
           })),
-        searchLinks: this.searchLinks(
-          r.grade ? `${r.name} ${r.grade}` : r.name,
-          m?.forms?.[0],
-          place,
-        ),
-        notes: (
-          got?.notes ??
-          (parsed
-            ? ''
-            : 'The search answer could not be read; use the search links below.')
-        ).slice(0, 400),
+        searchLinks: searchLinks(searchName(pick), material?.forms?.[0], place),
+        notes: (found?.notes ?? fallbackNote).slice(0, 400),
       };
     });
 

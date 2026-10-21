@@ -3,18 +3,14 @@ import {
   DesignSpecInput,
   Material,
 } from 'src/common/domain/domain.types';
-import {
-  SizingCase,
-  deriveIndices,
-  formatIndex,
-  sectionGeometry,
-  sizePart,
-} from './physics';
+import { SizingCase, sizePart } from './sizing';
+import { deriveIndices, formatIndex } from './indices';
+import { sectionGeometry } from './section';
 import { runSelection } from './pipeline';
 import { UnitError, toMetres, toNewtons, toNewtonMetres } from './units';
 import { validateMaterials } from './validate';
 
-const spec = (s: DesignSpecInput) => DesignSpec.parse(s);
+const spec = (input: DesignSpecInput) => DesignSpec.parse(input);
 
 const baseCase = (o: Partial<SizingCase>): SizingCase => ({
   component: 'beam',
@@ -30,7 +26,7 @@ const baseCase = (o: Partial<SizingCase>): SizingCase => ({
   ...o,
 });
 
-export function mat(
+function testMaterial(
   o: Partial<Material> & { id: string; name: string },
 ): Material {
   return {
@@ -69,11 +65,8 @@ export function mat(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Acceptance #2 — sizing correctness
-// ---------------------------------------------------------------------------
-describe('sizing (acceptance #2)', () => {
-  it('steel cantilever, 1 kN, 1 m, 5 mm deflection, solid square, E = 200 GPa → side 44.7 mm', () => {
+describe('sizing', () => {
+  it('steel cantilever, 1 kN, 1 m, 5 mm deflection, solid square, E = 200 GPa gives a 44.7 mm side', () => {
     const r = sizePart(
       baseCase({
         support: 'cantilever_end',
@@ -87,7 +80,7 @@ describe('sizing (acceptance #2)', () => {
     expect(r.governing).toBe('deflection');
   });
 
-  it('steel tie, 10 kN, SF 2, σ = 250 MPa → A = 80 mm², d = 10.1 mm', () => {
+  it('steel tie, 10 kN, SF 2, σ = 250 MPa gives A = 80 mm² and d = 10.1 mm', () => {
     const g = sectionGeometry('solid_round');
     const r = sizePart(
       baseCase({
@@ -104,7 +97,7 @@ describe('sizing (acceptance #2)', () => {
     expect(r.size * 1000).toBeCloseTo(10.1, 1);
   });
 
-  it('pinned steel column, 2 m, 10 kN, solid round → d = 25.3 mm', () => {
+  it('pinned steel column, 2 m, 10 kN, solid round gives d = 25.3 mm', () => {
     const r = sizePart(
       baseCase({
         component: 'column',
@@ -119,7 +112,7 @@ describe('sizing (acceptance #2)', () => {
     expect(r.governing).toBe('buckling');
   });
 
-  it('simply supported beam strength, 1 kN, 1 m, solid square → side 18.2 mm (σ = 250 MPa)', () => {
+  it('simply supported beam strength, 1 kN, 1 m, solid square, σ = 250 MPa gives an 18.2 mm side', () => {
     const r = sizePart(
       baseCase({ checkStrength: true }),
       sectionGeometry('solid_square'),
@@ -162,8 +155,8 @@ describe('sizing (acceptance #2)', () => {
     );
   });
 
-  it('the pipeline sizes with the low end of E (conservative) — cantilever end-to-end', () => {
-    const res = runSelection(
+  it('the pipeline sizes with the low end of E (conservative) for a cantilever, end to end', () => {
+    const result = runSelection(
       spec({
         title: 'Cantilever',
         component: 'beam',
@@ -174,47 +167,44 @@ describe('sizing (acceptance #2)', () => {
         support: 'cantilever_end',
         section: 'solid_square',
       }),
-      [mat({ id: 'steel', name: 'Steel', E: [200, 215] })],
+      [testMaterial({ id: 'steel', name: 'Steel', E: [200, 215] })],
       { mcSamples: 200 },
     );
-    expect(res.mode).toBe('sizing');
-    expect(res.ranking[0].sizing!.sizeMm).toBeCloseTo(44.7, 1);
+    expect(result.mode).toBe('sizing');
+    expect(result.ranking[0].sizing!.sizeMm).toBeCloseTo(44.7, 1);
     // MC samples E across the whole range, so the likely mass is at or below the conservative nominal.
-    expect(res.ranking[0].objectiveInterval[1]).toBeLessThanOrEqual(
-      res.ranking[0].objectiveValue + 1e-9,
+    expect(result.ranking[0].objectiveInterval[1]).toBeLessThanOrEqual(
+      result.ranking[0].objectiveValue + 1e-9,
     );
   });
 });
 
-// ---------------------------------------------------------------------------
-// Acceptance #3 — indices
-// ---------------------------------------------------------------------------
-describe('material indices (acceptance #3)', () => {
-  it('square tube beam stiffness → E^(1/2)/ρ', () => {
+describe('material indices', () => {
+  it('square tube beam stiffness gives E^(1/2)/ρ', () => {
     expect(
       deriveIndices('beam', ['stiffness'], 'square_tube', 'min_mass')[0]
         .expression,
     ).toBe('E^(1/2)/ρ');
   });
-  it('plank stiffness → E^(1/3)/ρ', () => {
+  it('plank stiffness gives E^(1/3)/ρ', () => {
     expect(
       deriveIndices('beam', ['stiffness'], 'rect_fixed_width', 'min_mass')[0]
         .expression,
     ).toBe('E^(1/3)/ρ');
   });
-  it('solid round beam strength → σ^(2/3)/ρ', () => {
+  it('solid round beam strength gives σ^(2/3)/ρ', () => {
     expect(
       deriveIndices('beam', ['strength'], 'solid_round', 'min_mass')[0]
         .expression,
     ).toBe('σ^(2/3)/ρ');
   });
-  it('plank strength → σ^(1/2)/ρ', () => {
+  it('plank strength gives σ^(1/2)/ρ', () => {
     expect(
       deriveIndices('beam', ['strength'], 'rect_fixed_width', 'min_mass')[0]
         .expression,
     ).toBe('σ^(1/2)/ρ');
   });
-  it('tie stiffness at min cost → E/ρ·C', () => {
+  it('tie stiffness at min cost gives E/ρ·C', () => {
     expect(
       deriveIndices('tie', ['stiffness'], 'solid_round', 'min_cost')[0]
         .expression,
@@ -248,7 +238,7 @@ describe('material indices (acceptance #3)', () => {
     expect(formatIndex({ E: 1 / 3, density: -1 })).toBe('E^(1/3)/ρ');
   });
   it('index-mode ranking orders by the index (CFRP beats steel and aluminium for a light stiff beam)', () => {
-    const res = runSelection(
+    const result = runSelection(
       spec({
         title: 'Stiff light beam',
         component: 'beam',
@@ -256,19 +246,19 @@ describe('material indices (acceptance #3)', () => {
         section: 'solid_round',
       }),
       [
-        mat({
+        testMaterial({
           id: 'steel',
           name: 'Steel',
           E: [200, 210],
           density: [7800, 7900],
         }),
-        mat({
+        testMaterial({
           id: 'al',
           name: 'Aluminium',
           E: [69, 72],
           density: [2690, 2710],
         }),
-        mat({
+        testMaterial({
           id: 'cfrp',
           name: 'CFRP',
           family: 'composite',
@@ -278,24 +268,21 @@ describe('material indices (acceptance #3)', () => {
       ],
       { mcSamples: 300 },
     );
-    expect(res.mode).toBe('index');
-    expect(res.ranking.map((r) => r.materialId)).toEqual([
+    expect(result.mode).toBe('index');
+    expect(result.ranking.map((r) => r.materialId)).toEqual([
       'cfrp',
       'al',
       'steel',
     ]);
-    expect(res.ranking[0].objectiveValue).toBeCloseTo(100, 6);
-    expect(res.warnings.some((w) => w.includes('performance index only'))).toBe(
-      true,
-    );
+    expect(result.ranking[0].objectiveValue).toBeCloseTo(100, 6);
+    expect(
+      result.warnings.some((w) => w.includes('performance index only')),
+    ).toBe(true);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Acceptance #4 — screening
-// ---------------------------------------------------------------------------
-describe('screening (acceptance #4)', () => {
-  const s = spec({
+describe('screening', () => {
+  const brief = spec({
     title: 'Garden bench rail',
     component: 'beam',
     criteria: ['stiffness', 'strength'],
@@ -307,12 +294,12 @@ describe('screening (acceptance #4)', () => {
     requiredProcesses: ['drill'],
   });
   const materials: Material[] = [
-    mat({
+    testMaterial({
       id: 'mild',
       name: 'Mild steel (uncoated)',
       ratings: { fresh_water: 'D', salt_water: 'E', uv: 'A', chemicals: 'C' },
     }),
-    mat({
+    testMaterial({
       id: 'glass',
       name: 'Toughened glass',
       family: 'ceramic_glass',
@@ -323,14 +310,14 @@ describe('screening (acceptance #4)', () => {
       ratings: { fresh_water: 'A', salt_water: 'A', uv: 'A', chemicals: 'A' },
       processes: { drill: 'no' },
     }),
-    mat({ id: 'mystery', name: 'Mystery alloy', E: null }),
-    mat({
+    testMaterial({ id: 'mystery', name: 'Mystery alloy', E: null }),
+    testMaterial({
       id: 'neg',
       name: 'Bad data plastic',
       family: 'polymer',
       density: [-5, 1200],
     }),
-    mat({
+    testMaterial({
       id: 'al',
       name: 'Aluminium 6061-T6',
       density: [2690, 2710],
@@ -338,7 +325,7 @@ describe('screening (acceptance #4)', () => {
       strength: [240, 276],
       ratings: { fresh_water: 'A', salt_water: 'B', uv: 'A', chemicals: 'B' },
     }),
-    mat({
+    testMaterial({
       id: 'ss',
       name: 'Stainless steel 304',
       density: [7900, 8000],
@@ -347,7 +334,7 @@ describe('screening (acceptance #4)', () => {
       ratings: { fresh_water: 'A', salt_water: 'B', uv: 'A', chemicals: 'A' },
       processes: { drill: 'possible' },
     }),
-    mat({
+    testMaterial({
       id: 'oak',
       name: 'Oak',
       family: 'wood_natural',
@@ -359,64 +346,61 @@ describe('screening (acceptance #4)', () => {
     }),
   ];
 
-  const res = runSelection(s, materials, { mcSamples: 500 });
+  const result = runSelection(brief, materials, { mcSamples: 500 });
 
   it('rejects a rusting steel (water rating D) outdoors', () => {
-    const r = res.rejected.find((x) => x.materialId === 'mild');
+    const r = result.rejected.find((x) => x.materialId === 'mild');
     expect(r).toBeDefined();
     expect(r!.reasons.join(' ')).toMatch(/fresh water rating D/);
   });
   it('rejects a material that cannot be drilled', () => {
-    const r = res.rejected.find((x) => x.materialId === 'glass');
+    const r = result.rejected.find((x) => x.materialId === 'glass');
     expect(r!.reasons.join(' ')).toMatch(/drilling \(not possible\)/);
   });
   it('sends a material with missing E to "not evaluated"', () => {
-    expect(res.notEvaluated.map((x) => x.materialId)).toContain('mystery');
+    expect(result.notEvaluated.map((x) => x.materialId)).toContain('mystery');
   });
   it('sends negative density to "invalid data"', () => {
-    expect(res.invalidData.map((x) => x.materialId)).toEqual(['neg']);
+    expect(result.invalidData.map((x) => x.materialId)).toEqual(['neg']);
   });
   it('ranks the rest, lightest first, and sizes wood as a solid section', () => {
-    expect(res.mode).toBe('sizing');
-    expect(res.ranking.map((r) => r.materialId).sort()).toEqual([
+    expect(result.mode).toBe('sizing');
+    expect(result.ranking.map((r) => r.materialId).sort()).toEqual([
       'al',
       'oak',
       'ss',
     ]);
-    const masses = res.ranking.map((r) => r.objectiveValue);
+    const masses = result.ranking.map((r) => r.objectiveValue);
     expect([...masses].sort((a, b) => a - b)).toEqual(masses);
-    const oak = res.ranking.find((r) => r.materialId === 'oak')!;
+    const oak = result.ranking.find((r) => r.materialId === 'oak')!;
     expect(oak.sizing!.sectionUsed).toBe('solid_square');
-    expect(res.ranking.reduce((a, r) => a + r.pBest, 0)).toBeCloseTo(1, 6);
+    expect(result.ranking.reduce((a, r) => a + r.pBest, 0)).toBeCloseTo(1, 6);
   });
   it('two identical runs give identical rankings and probabilities', () => {
-    const again = runSelection(s, materials, { mcSamples: 500 });
-    expect(again.ranking).toEqual(res.ranking);
-    expect(again.seed).toBe(res.seed);
+    const again = runSelection(brief, materials, { mcSamples: 500 });
+    expect(again.ranking).toEqual(result.ranking);
+    expect(again.seed).toBe(result.seed);
   });
   it('generates numeric reasons in code', () => {
-    expect(res.ranking[0].reasons[0]).toMatch(
+    expect(result.ranking[0].reasons[0]).toMatch(
       /^Lightest part that meets every requirement: about [\d.]+ kg$/,
     );
-    expect(res.ranking[1].reasons[0]).toMatch(/× the mass of the top pick/);
-    expect(res.ranking[0].reasons.join(' ')).toMatch(
+    expect(result.ranking[1].reasons[0]).toMatch(/× the mass of the top pick/);
+    expect(result.ranking[0].reasons.join(' ')).toMatch(
       /Works with your tools: drilling/,
     );
   });
 });
 
-// ---------------------------------------------------------------------------
-// Validation, units, safety
-// ---------------------------------------------------------------------------
 describe('plausibility validation', () => {
   it('reorders reversed ranges, flags wide ranges, discards G > E, removes duplicates', () => {
     const v = validateMaterials([
-      mat({ id: 'a', name: 'A', E: [210, 200] }),
-      mat({ id: 'b', name: 'B', strength: [10, 900] }),
-      mat({ id: 'c', name: 'C', G: [300, 310] }),
-      mat({ id: 'a2', name: 'a' }),
-      mat({ id: 'd', name: 'D', price: [0.001, 1] }),
-      mat({ id: 'e', name: 'E', confidence: 'low' }),
+      testMaterial({ id: 'a', name: 'A', E: [210, 200] }),
+      testMaterial({ id: 'b', name: 'B', strength: [10, 900] }),
+      testMaterial({ id: 'c', name: 'C', G: [300, 310] }),
+      testMaterial({ id: 'a2', name: 'a' }),
+      testMaterial({ id: 'd', name: 'D', price: [0.001, 1] }),
+      testMaterial({ id: 'e', name: 'E', confidence: 'low' }),
     ]);
     expect(v.valid.find((m) => m.id === 'a')!.E).toEqual([200, 210]);
     expect(v.flags.get('a')![0]).toMatch(/reversed/);
@@ -454,7 +438,7 @@ describe('units', () => {
           load: { value: 5, unit: 'kg' },
           length: { value: 1, unit: 'm' },
         }),
-        [mat({ id: 's', name: 'S' })],
+        [testMaterial({ id: 's', name: 'S' })],
         { mcSamples: 10 },
       ),
     ).toThrow(UnitError);
@@ -471,18 +455,24 @@ describe('safety', () => {
       section: 'round_tube' as const,
       safetyClass: 'carries_people' as const,
     };
-    const r1 = runSelection(spec(base), [mat({ id: 'al', name: 'Al' })], {
-      mcSamples: 10,
-    });
-    expect(r1.safetyFactor).toBe(2.5);
-    expect(r1.safetyNotes[0]).toMatch(/not a certified design/);
-    const r2 = runSelection(
+    const defaultFactor = runSelection(
+      spec(base),
+      [testMaterial({ id: 'al', name: 'Al' })],
+      {
+        mcSamples: 10,
+      },
+    );
+    expect(defaultFactor.safetyFactor).toBe(2.5);
+    expect(defaultFactor.safetyNotes[0]).toMatch(/not a certified design/);
+    const loweredFactor = runSelection(
       spec({ ...base, safetyFactor: 1.2 }),
-      [mat({ id: 'al', name: 'Al' })],
+      [testMaterial({ id: 'al', name: 'Al' })],
       { mcSamples: 10 },
     );
-    expect(r2.safetyFactor).toBe(1.2);
-    expect(r2.warnings.join(' ')).toMatch(/lower than the usual 2.5/);
+    expect(loweredFactor.safetyFactor).toBe(1.2);
+    expect(loweredFactor.warnings.join(' ')).toMatch(
+      /lower than the usual 2.5/,
+    );
   });
   it('estimates G from E for shafts and flags it', () => {
     const r = runSelection(
@@ -495,7 +485,7 @@ describe('safety', () => {
         maxTwistDeg: 2,
         section: 'solid_round',
       }),
-      [mat({ id: 's', name: 'S', G: null })],
+      [testMaterial({ id: 's', name: 'S', G: null })],
       { mcSamples: 10 },
     );
     expect(r.ranking[0].dataFlags.join()).toMatch(/estimated as E\/2.6/);
@@ -503,7 +493,7 @@ describe('safety', () => {
 });
 
 describe('custom environments', () => {
-  const s = spec({
+  const brief = spec({
     title: 'Pool-side rail',
     component: 'beam',
     load: { value: 100, unit: 'kg' },
@@ -512,34 +502,34 @@ describe('custom environments', () => {
     customEnvironments: ['Next to a chlorinated pool'],
   });
   const key = 'next to a chlorinated pool';
-  const res = runSelection(
-    s,
+  const result = runSelection(
+    brief,
     [
-      mat({ id: 'ok', name: 'Good', customRatings: { [key]: 'A' } }),
-      mat({ id: 'bad', name: 'Bad', customRatings: { [key]: 'D' } }),
-      mat({ id: 'unknown', name: 'Unknown' }),
+      testMaterial({ id: 'ok', name: 'Good', customRatings: { [key]: 'A' } }),
+      testMaterial({ id: 'bad', name: 'Bad', customRatings: { [key]: 'D' } }),
+      testMaterial({ id: 'unknown', name: 'Unknown' }),
     ],
     { mcSamples: 50 },
   );
   it('ranks materials rated B or better, rejects worse, and never guesses missing ratings', () => {
-    expect(res.ranking.map((r) => r.materialId)).toEqual(['ok']);
-    expect(res.rejected[0].reasons[0]).toBe(
+    expect(result.ranking.map((r) => r.materialId)).toEqual(['ok']);
+    expect(result.rejected[0].reasons[0]).toBe(
       'Not suited to “Next to a chlorinated pool”: rating D (needs B or better)',
     );
-    expect(res.notEvaluated[0].reasons[0]).toMatch(
+    expect(result.notEvaluated[0].reasons[0]).toMatch(
       /rating for “Next to a chlorinated pool”/,
     );
-    expect(res.activeConstraints).toContain(
+    expect(result.activeConstraints).toContain(
       'Suited to “Next to a chlorinated pool”: rating B or better',
     );
-    expect(res.ranking[0].reasons.join(' ')).toMatch(
+    expect(result.ranking[0].reasons.join(' ')).toMatch(
       /“Next to a chlorinated pool” A/,
     );
   });
 });
 
 describe('general parts: property limits and custom index', () => {
-  const s = spec({
+  const brief = spec({
     title: 'Brake pad',
     component: 'custom',
     customProperties: [
@@ -571,52 +561,52 @@ describe('general parts: property limits and custom index', () => {
       terms: [{ property: 'wear_rate', exponent: -1 }],
     },
   });
-  const fr = (mu: [number, number], k: [number, number]) => ({
+  const frictionAndWear = (mu: [number, number], k: [number, number]) => ({
     friction_coefficient: mu,
     wear_rate: k,
   });
-  const res = runSelection(
-    s,
+  const result = runSelection(
+    brief,
     [
-      mat({
+      testMaterial({
         id: 'ceramic',
         name: 'Ceramic pad',
         tMax: [500, 650],
-        extra: fr([0.3, 0.4], [1e-6, 5e-6]),
+        extra: frictionAndWear([0.3, 0.4], [1e-6, 5e-6]),
       }),
-      mat({
+      testMaterial({
         id: 'semi',
         name: 'Semi-metallic pad',
         tMax: [450, 550],
-        extra: fr([0.35, 0.45], [2e-6, 8e-6]),
+        extra: frictionAndWear([0.35, 0.45], [2e-6, 8e-6]),
       }),
-      mat({
+      testMaterial({
         id: 'cc',
         name: 'Carbon-carbon',
         tMax: [500, 600],
-        extra: fr([0.2, 0.6], [2e-7, 2e-6]),
+        extra: frictionAndWear([0.2, 0.6], [2e-7, 2e-6]),
       }),
-      mat({
+      testMaterial({
         id: 'nao',
         name: 'Organic pad',
         tMax: [250, 350],
-        extra: fr([0.35, 0.45], [5e-6, 2e-5]),
+        extra: frictionAndWear([0.35, 0.45], [5e-6, 2e-5]),
       }),
-      mat({
+      testMaterial({
         id: 'slippy',
         name: 'Slippy',
         tMax: [500, 600],
-        extra: fr([0.05, 0.1], [1e-7, 2e-7]),
+        extra: frictionAndWear([0.05, 0.1], [1e-7, 2e-7]),
       }),
-      mat({ id: 'steel', name: 'Steel' }),
+      testMaterial({ id: 'steel', name: 'Steel' }),
     ],
     { mcSamples: 300 },
   );
   it('ranks by the custom index using the conservative end of each range', () => {
-    expect(res.mode).toBe('index');
-    expect(res.index.expression).toBe('1/k');
+    expect(result.mode).toBe('index');
+    expect(result.index.expression).toBe('1/k');
     // 1/k at the high (worst) end of k: C/C 1/2e-6 > ceramic 1/5e-6 > semi-metallic 1/8e-6
-    expect(res.ranking.map((r) => r.materialId)).toEqual([
+    expect(result.ranking.map((r) => r.materialId)).toEqual([
       'cc',
       'ceramic',
       'semi',
@@ -624,7 +614,7 @@ describe('general parts: property limits and custom index', () => {
   });
   it('rejects ranges that fail entirely, flags ranges that straddle a limit', () => {
     const why = Object.fromEntries(
-      res.rejected.map((r) => [r.materialId, r.reasons.join(' ')]),
+      result.rejected.map((r) => [r.materialId, r.reasons.join(' ')]),
     );
     expect(why.nao).toMatch(
       /Max service temperature about 250–350 °C; needs at least 400 °C/,
@@ -633,21 +623,21 @@ describe('general parts: property limits and custom index', () => {
       /Friction coefficient about 0.05–0.1; needs at least 0.3 \(steady braking\)/,
     );
     expect(
-      res.ranking.find((r) => r.materialId === 'cc')!.dataFlags.join(),
+      result.ranking.find((r) => r.materialId === 'cc')!.dataFlags.join(),
     ).toMatch(/Only part of its friction coefficient range/);
   });
   it('sends materials without the custom data to "not evaluated" (never guessed)', () => {
-    expect(res.notEvaluated.map((x) => x.materialId)).toEqual(['steel']);
-    expect(res.notEvaluated[0].reasons[0]).toMatch(
+    expect(result.notEvaluated.map((x) => x.materialId)).toEqual(['steel']);
+    expect(result.notEvaluated[0].reasons[0]).toMatch(
       /Missing data: .*Friction coefficient/,
     );
-    expect(res.notEvaluated[0].reasons[0]).toMatch(/Specific wear rate/);
+    expect(result.notEvaluated[0].reasons[0]).toMatch(/Specific wear rate/);
   });
   it('states the requirements and shows the property values in the reasons', () => {
-    expect(res.activeConstraints).toContain(
+    expect(result.activeConstraints).toContain(
       'Friction coefficient between 0.3 and 0.5 — steady braking',
     );
-    expect(res.ranking[0].reasons.join(' | ')).toMatch(
+    expect(result.ranking[0].reasons.join(' | ')).toMatch(
       /Friction coefficient: about 0.2–0.6/,
     );
   });
@@ -673,7 +663,7 @@ describe('footprint, sustainability and processability', () => {
     support: 'cantilever_end' as const,
     section: 'solid_square' as const,
   };
-  const steel = mat({
+  const steel = testMaterial({
     id: 'steel',
     name: 'Steel',
     co2: [1.6, 2.4],
@@ -681,7 +671,7 @@ describe('footprint, sustainability and processability', () => {
     recyclability: 'good',
     criticalElements: ['Manganese'],
   });
-  const alu = mat({
+  const alu = testMaterial({
     id: 'alu',
     name: 'Aluminium',
     density: [2690, 2710],
@@ -721,7 +711,7 @@ describe('footprint, sustainability and processability', () => {
   });
 
   it('index mode uses CO₂ per kg in the index and reports footprint per kg', () => {
-    const res = runSelection(
+    const result = runSelection(
       spec({
         title: 'x',
         component: 'beam',
@@ -731,8 +721,8 @@ describe('footprint, sustainability and processability', () => {
       [steel, alu],
       { mcSamples: 50 },
     );
-    expect(res.index.expression).toBe('E^(1/2)/ρ·CO₂');
-    expect(res.ranking[0].footprint).toMatchObject({
+    expect(result.index.expression).toBe('E^(1/2)/ρ·CO₂');
+    expect(result.ranking[0].footprint).toMatchObject({
       basis: 'kg',
       co2Kg: [1.6, 2.4],
     });
@@ -774,22 +764,22 @@ describe('footprint, sustainability and processability', () => {
   });
 
   it('"balanced" without exchange constants uses the defaults and says so', () => {
-    const res = runSelection(
+    const result = runSelection(
       spec({ ...beam, objective: 'balanced' }),
       [steel, alu],
       { mcSamples: 20 },
     );
-    expect(res.warnings.join(' ')).toMatch(
+    expect(result.warnings.join(' ')).toMatch(
       /\$1 per kg saved and \$0.1 per kg CO₂e/,
     );
-    expect(res.ranking[0].penalty).toMatchObject({
+    expect(result.ranking[0].penalty).toMatchObject({
       alphaMass: 1,
       alphaCo2: 0.1,
     });
   });
 
   it('"balanced" in index mode divides the mass index by the penalty per kg; trade-off is relative to the lightest', () => {
-    const res = runSelection(
+    const result = runSelection(
       spec({
         title: 'x',
         component: 'beam',
@@ -800,60 +790,60 @@ describe('footprint, sustainability and processability', () => {
       [steel, alu],
       { mcSamples: 20 },
     );
-    expect(res.index.expression).toBe('E^(1/2)/ρ·(C + α_m + α_CO₂·CO₂)');
-    const masses = res.ranking.map((r) => r.tradeoff!.mass);
+    expect(result.index.expression).toBe('E^(1/2)/ρ·(C + α_m + α_CO₂·CO₂)');
+    const masses = result.ranking.map((r) => r.tradeoff!.mass);
     expect(Math.min(...masses)).toBeCloseTo(1, 9);
-    expect(res.ranking.every((r) => r.tradeoff!.basis === 'relative')).toBe(
+    expect(result.ranking.every((r) => r.tradeoff!.basis === 'relative')).toBe(
       true,
     );
   });
 
   it('matches critical raw materials against the EU list in code, ignoring others', () => {
-    const res = runSelection(spec(beam), [alu], { mcSamples: 10 });
-    expect(res.ranking[0].sustainability.criticalRawMaterials).toEqual([
+    const result = runSelection(spec(beam), [alu], { mcSamples: 10 });
+    expect(result.ranking[0].sustainability.criticalRawMaterials).toEqual([
       'aluminium/bauxite',
       'magnesium',
     ]);
-    expect(res.ranking[0].reasons.join(' | ')).toMatch(
+    expect(result.ranking[0].reasons.join(' | ')).toMatch(
       /EU critical raw materials: aluminium\/bauxite, magnesium/,
     );
   });
 
   it('rates processability from the workshop process ratings', () => {
-    const res = runSelection(spec(beam), [alu, steel], { mcSamples: 10 });
-    const a = res.ranking.find((r) => r.materialId === 'alu')!;
+    const result = runSelection(spec(beam), [alu, steel], { mcSamples: 10 });
+    const a = result.ranking.find((r) => r.materialId === 'alu')!;
     expect(a.processability.level).toBe('easy');
-    const s = res.ranking.find((r) => r.materialId === 'steel')!;
-    expect(s.processability.level).toBe(null); // only 3 rated processes, 2 of them workshop ones
+    const steelResult = result.ranking.find((r) => r.materialId === 'steel')!;
+    expect(steelResult.processability.level).toBe(null); // only 3 rated processes, 2 of them workshop ones
   });
 
   it('applies the recyclable and renewable must-haves, never guessing unknowns', () => {
-    const wood = mat({
+    const wood = testMaterial({
       id: 'wood',
       name: 'Pine',
       family: 'wood_natural',
       recyclability: 'good',
       renewable: true,
     });
-    const cfrp = mat({
+    const cfrp = testMaterial({
       id: 'cfrp',
       name: 'CFRP',
       family: 'composite',
       recyclability: 'difficult',
       renewable: false,
     });
-    const unknown = mat({ id: 'unk', name: 'Unknown' });
-    const res = runSelection(
+    const unknown = testMaterial({ id: 'unk', name: 'Unknown' });
+    const result = runSelection(
       spec({ ...beam, mustHave: ['recyclable', 'renewable'] }),
       [wood, cfrp, unknown],
       { mcSamples: 10 },
     );
-    expect(res.ranking.map((r) => r.materialId)).toEqual(['wood']);
-    expect(res.rejected[0].reasons).toEqual([
+    expect(result.ranking.map((r) => r.materialId)).toEqual(['wood']);
+    expect(result.rejected[0].reasons).toEqual([
       'Hard to recycle (recyclability: difficult)',
       'Not made from a renewable source',
     ]);
-    expect(res.notEvaluated[0].reasons[0]).toMatch(
+    expect(result.notEvaluated[0].reasons[0]).toMatch(
       /recyclability, whether it is renewable/,
     );
   });

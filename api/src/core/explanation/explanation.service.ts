@@ -8,13 +8,13 @@ import {
 import { LlmContextI } from 'src/common/interface/main.interface';
 import { AppLoggerService } from 'src/common/logging/logging.service';
 import { LlmService } from 'src/core/llm/llm.service';
-import { mockExplanation } from 'src/core/llm/mock/mock.data';
+import { mockExplanation } from 'src/core/llm/mock/mock.explanation';
 import {
   explanationSystem,
   explanationUser,
 } from 'src/core/llm/prompts/llm.prompts';
+import { buildPayload } from 'src/core/selection/util/explanationPayload.util';
 import {
-  buildPayload,
   checkGrounding,
   ignoreTermsFor,
 } from 'src/core/selection/util/grounding.util';
@@ -27,9 +27,9 @@ export class ExplanationService {
   ) {}
 
   /**
-   * explanation for one audience, then the grounding check (every number must come from the
-   * calculation). Regenerates once if numbers don't match. If Claude fails, the calculation still stands:
-   * the standard templated (and grounded) summary is returned instead.
+   * Writes the explanation for one audience and checks that every number in it comes from the calculation,
+   * regenerating once if some don't. If Claude fails, the calculation still stands and the templated
+   * (grounded) summary is returned instead.
    */
   async generateExplanation(
     result: SelectionResult,
@@ -37,64 +37,56 @@ export class ExplanationService {
     ctx: LlmContextI,
   ): Promise<Explanation> {
     const payload = buildPayload(result);
-    const ignore = ignoreTermsFor(result);
-    const done = (text: string, source: DataSource): Explanation => {
-      const g = checkGrounding(text, payload, ignore);
-      return {
-        audience,
-        text,
-        ...g,
-        generatedAt: new Date().toISOString(),
-        dataSource: source,
-      };
-    };
+    const ignoreTerms = ignoreTermsFor(result);
+    const checked = (text: string, source: DataSource): Explanation => ({
+      audience,
+      text,
+      ...checkGrounding(text, payload, ignoreTerms),
+      generatedAt: new Date().toISOString(),
+      dataSource: source,
+    });
 
     if (!this.llm.isLive(ctx))
-      return done(mockExplanation(payload, audience), 'mock');
+      return checked(mockExplanation(payload, audience), 'mock');
 
     try {
       const system = explanationSystem(audience);
-      let text = await this.llm.text(
-        ctx,
-        `explanation:${audience}`,
-        system,
-        explanationUser(payload),
-        8000,
+      const first = checked(
+        await this.llm.text(
+          ctx,
+          `explanation:${audience}`,
+          system,
+          explanationUser(payload),
+          8000,
+        ),
+        'llm',
       );
-      let g = checkGrounding(text, payload, ignore);
+      if (first.grounded) return first;
 
-      if (!g.grounded) {
-        this.logger.warn(
-          `ExplanationService: ${audience} explanation had unverified numbers ${g.unverifiedNumbers.join(', ')}; regenerating once.`,
-        );
-        const second = await this.llm.text(
+      this.logger.warn(
+        `ExplanationService: ${audience} explanation had unverified numbers ${first.unverifiedNumbers.join(', ')}; regenerating once.`,
+      );
+      const second = checked(
+        await this.llm.text(
           ctx,
           `explanation:${audience}:retry`,
           system,
-          explanationUser(payload, g.unverifiedNumbers),
+          explanationUser(payload, first.unverifiedNumbers),
           8000,
-        );
-        const g2 = checkGrounding(second, payload, ignore);
-        if (g2.unverifiedNumbers.length <= g.unverifiedNumbers.length) {
-          text = second;
-          g = g2;
-        }
-      }
-
-      return {
-        audience,
-        text,
-        ...g,
-        generatedAt: new Date().toISOString(),
-        dataSource: 'llm',
-      };
-    } catch (e) {
-      this.logger.error(
-        `ExplanationService: explanation failed, using template: ${(e as Error).message}`,
+        ),
+        'llm',
       );
-      const ex = done(mockExplanation(payload, audience), 'mock');
-      ex.text = `> Claude's explanation was unavailable (${(e as Error).message}), so this is the standard summary.\n\n${ex.text}`;
-      return ex;
+      return second.unverifiedNumbers.length <= first.unverifiedNumbers.length
+        ? second
+        : first;
+    } catch (err) {
+      const reason = (err as Error).message;
+      this.logger.error(
+        `ExplanationService: explanation failed, using template: ${reason}`,
+      );
+      const fallback = checked(mockExplanation(payload, audience), 'mock');
+      fallback.text = `> Claude's explanation was unavailable (${reason}), so this is the standard summary.\n\n${fallback.text}`;
+      return fallback;
     }
   }
 }

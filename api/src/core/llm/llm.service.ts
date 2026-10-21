@@ -1,15 +1,13 @@
 /**
- * Claude wrapper: structured (JSON-schema constrained) calls and plain-text calls.
+ * Wrapper around Claude for structured (JSON Schema constrained) calls, plain-text calls and web search.
  *
- * Which key is used is decided per request (see `resolve`):
- *   1. the server's ANTHROPIC_API_KEY, if configured;
- *   2. otherwise a key the user supplied from the web app (header `x-anthropic-api-key`);
- *   3. otherwise none → callers use the built-in demo (mock) data.
- * User keys are only held in memory for the request (and an LRU of clients); never stored or logged.
+ * The key is chosen per request (see `resolve`): the server's ANTHROPIC_API_KEY if configured, otherwise
+ * a key the user sent from the web app (header `x-anthropic-api-key`), otherwise none, and callers then
+ * use the built-in demo data. User keys only live in memory (the request and a small LRU of clients);
+ * they are never stored or logged.
  *
- * DECISION: the spec asks for a "forced tool call". Current Claude models reject forced tool_choice, so
- * structured outputs (`output_config.format`) are used instead — same guarantee (schema-valid JSON),
- * fewer moving parts. Everything returned is still validated with zod, with one corrective retry.
+ * Structured outputs (`output_config.format`) are used rather than a forced tool call, because current
+ * models reject a forced tool_choice. Replies are still validated with zod, with one corrective retry.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
@@ -27,7 +25,7 @@ import { StructuredCallI } from './interface/llm.interface';
 type StreamParams = Parameters<Anthropic['beta']['messages']['stream']>[0];
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-/** Claude keys start with "sk-ant-"; anything else is rejected before a network call. */
+// Claude keys start with "sk-ant-". Anything else is rejected before a network call.
 export const looksLikeKey = (k: unknown): k is string =>
   typeof k === 'string' && /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(k.trim());
 
@@ -64,12 +62,11 @@ export class LlmService {
       : FALLBACK_MODELS.test(this.model);
   }
 
-  /** True when the server itself has a key (users then never need their own). */
+  // When the server has its own key, users never need theirs.
   get hasServerKey(): boolean {
     return !!this.serverKey && !this.forceMock;
   }
 
-  /** Decide which key this request uses: server key → user key → none (demo data). */
   resolve(userKey?: string | null): LlmContextI {
     if (this.forceMock) return { apiKey: null, keySource: KeySource.None };
     if (this.serverKey)
@@ -130,7 +127,7 @@ export class LlmService {
     }
   }
 
-  /** JSON output constrained by `schema`, validated by `parse`; retried once with the validation errors. */
+  // JSON output constrained by `schema` and validated by `parse`. Retried once, telling Claude what was wrong.
   async structured<T>(ctx: LlmContextI, call: StructuredCallI<T>): Promise<T> {
     let errors: string | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -149,9 +146,9 @@ export class LlmService {
         errors = 'The response was not valid JSON.';
         continue;
       }
-      const r = call.parse.safeParse(json);
-      if (r.success) return r.data;
-      errors = r.error.issues
+      const parsed = call.parse.safeParse(json);
+      if (parsed.success) return parsed.data;
+      errors = parsed.error.issues
         .slice(0, 20)
         .map((i) => `- ${i.path.join('.')}: ${i.message}`)
         .join('\n');
@@ -165,7 +162,6 @@ export class LlmService {
     );
   }
 
-  /** Plain-text completion. */
   async text(
     ctx: LlmContextI,
     label: string,
@@ -180,16 +176,62 @@ export class LlmService {
 
   private client(apiKey: string): Anthropic {
     const id = createHash('sha256').update(apiKey).digest('hex');
-    let c = this.clients.get(id);
-    if (c) {
-      this.clients.delete(id); // refresh LRU position
+    let client = this.clients.get(id);
+    if (client) {
+      // Re-inserting moves it to the end, which keeps the Map in least-recently-used order.
+      this.clients.delete(id);
     } else {
-      c = new Anthropic({ apiKey, timeout: this.timeout, maxRetries: 2 });
+      client = new Anthropic({ apiKey, timeout: this.timeout, maxRetries: 2 });
     }
-    this.clients.set(id, c);
+    this.clients.set(id, client);
     while (this.clients.size > CONFIGS.USER_KEY_CLIENT_CACHE)
       this.clients.delete(this.clients.keys().next().value!);
-    return c;
+    return client;
+  }
+
+  private requireKey(ctx: LlmContextI): string {
+    if (!ctx.apiKey)
+      throw new AppException(
+        'No Claude API key is available for this request.',
+        400,
+      );
+    return ctx.apiKey;
+  }
+
+  private fallbackParams() {
+    return this.useFallbacks
+      ? {
+          betas: ['server-side-fallback-2026-07-01'],
+          fallbacks: 'default' as const,
+        }
+      : {};
+  }
+
+  private logUsage(
+    label: string,
+    ctx: LlmContextI,
+    msg: Anthropic.Beta.Messages.BetaMessage,
+    started: number,
+  ) {
+    this.logger.log(
+      `LlmService: ${label} [${ctx.keySource} key] ${msg.model} ${Date.now() - started} ms, in ${msg.usage.input_tokens} / out ${msg.usage.output_tokens} tokens, stop=${msg.stop_reason}`,
+    );
+  }
+
+  // Joins the text blocks of a reply; an empty answer is an error.
+  private replyText(
+    label: string,
+    msg: Anthropic.Beta.Messages.BetaMessage,
+  ): string {
+    const text = msg.content
+      .filter(
+        (b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text',
+      )
+      .map((b) => b.text)
+      .join('');
+    if (!text.trim())
+      throw new AppException(`Claude returned an empty ${label} answer.`, 502);
+    return text;
   }
 
   private async complete(
@@ -200,11 +242,7 @@ export class LlmService {
     maxTokens: number,
     schema: Record<string, unknown> | null,
   ): Promise<string> {
-    if (!ctx.apiKey)
-      throw new AppException(
-        'No Claude API key is available for this request.',
-        400,
-      );
+    const apiKey = this.requireKey(ctx);
     const withFormat = !!schema && this.useFormat;
     const params: StreamParams = {
       model: this.model,
@@ -220,22 +258,15 @@ export class LlmService {
           ? { format: { type: 'json_schema' as const, schema: schema! } }
           : {}),
       },
-      ...(this.useFallbacks
-        ? {
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default' as const,
-          }
-        : {}),
+      ...this.fallbackParams(),
     };
 
     const started = Date.now();
     try {
-      const msg = await this.client(ctx.apiKey)
+      const msg = await this.client(apiKey)
         .beta.messages.stream(params)
         .finalMessage();
-      this.logger.log(
-        `LlmService: ${label} [${ctx.keySource} key] ${msg.model} ${Date.now() - started} ms, in ${msg.usage.input_tokens} / out ${msg.usage.output_tokens} tokens, stop=${msg.stop_reason}`,
-      );
+      this.logUsage(label, ctx, msg, started);
       if (msg.stop_reason === 'refusal') {
         throw new AppException(
           `Claude declined the ${label} request${msg.stop_details?.explanation ? `: ${msg.stop_details.explanation}` : '.'}`,
@@ -247,24 +278,13 @@ export class LlmService {
           `Claude's ${label} answer was cut off (output limit reached).`,
           502,
         );
-      const text = msg.content
-        .filter(
-          (b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text',
-        )
-        .map((b) => b.text)
-        .join('');
-      if (!text.trim())
-        throw new AppException(
-          `Claude returned an empty ${label} answer.`,
-          502,
-        );
-      return text;
+      return this.replyText(label, msg);
     } catch (err) {
       if (err instanceof AppException) throw err;
       if (err instanceof Anthropic.BadRequestError) {
-        // Degrade gracefully if this model/platform rejects an optional feature, then retry once without it.
-        const m = err.message.toLowerCase();
-        if (this.useFallbacks && m.includes('fallback')) {
+        // If this model or platform rejects an optional feature, turn it off and retry without it.
+        const message = err.message.toLowerCase();
+        if (this.useFallbacks && message.includes('fallback')) {
           this.logger.warn(
             'LlmService: server-side fallbacks not accepted here; disabling them.',
           );
@@ -273,9 +293,9 @@ export class LlmService {
         }
         if (
           withFormat &&
-          (m.includes('output_config') ||
-            m.includes('schema') ||
-            m.includes('format'))
+          (message.includes('output_config') ||
+            message.includes('schema') ||
+            message.includes('format'))
         ) {
           this.logger.warn(
             `LlmService: structured output format rejected (${err.message}); falling back to JSON-in-prompt.`,
@@ -292,24 +312,25 @@ export class LlmService {
     }
   }
 
-  /** Map an Anthropic SDK error to the HTTP error the web app should see. */
+  // Maps an Anthropic SDK error to the HTTP error the web app should see.
   private toAppException(
     err: unknown,
     ctx: LlmContextI,
     label: string,
   ): AppException {
     if (err instanceof AppException) return err;
-    const whose = ctx.keySource === KeySource.User ? 'Your' : 'The server’s';
-    // A user's own key being wrong is their problem to fix → 401 so the web app can ask for a new one.
+    const isUserKey = ctx.keySource === KeySource.User;
+    const whose = isUserKey ? 'Your' : 'The server’s';
+    // A bad user key is for the user to fix, so it gets a 401 and the web app asks for a new one.
     if (err instanceof Anthropic.AuthenticationError)
       return new AppException(
-        `${whose} Claude API key was rejected. ${ctx.keySource === KeySource.User ? 'Update it in the key settings.' : 'Check ANTHROPIC_API_KEY in api/.env.'}`,
-        ctx.keySource === KeySource.User ? 401 : 502,
+        `${whose} Claude API key was rejected. ${isUserKey ? 'Update it in the key settings.' : 'Check ANTHROPIC_API_KEY in api/.env.'}`,
+        isUserKey ? 401 : 502,
       );
     if (err instanceof Anthropic.PermissionDeniedError)
       return new AppException(
         `${whose} Claude API key cannot use model ${this.model}.`,
-        ctx.keySource === KeySource.User ? 403 : 502,
+        isUserKey ? 403 : 502,
       );
     if (err instanceof Anthropic.NotFoundError)
       return new AppException(
@@ -343,9 +364,8 @@ export class LlmService {
   }
 
   /**
-   * Text answer with live web search (Anthropic's server-side web_search tool), localised to a country
-   * (and optionally a city). Resumes server-side "pause_turn" stops. Returns the final text.
-   * Citations come back with web search, so structured output can't be combined here; callers parse JSON.
+   * Text answer using Anthropic's server-side web_search tool, localised to a country and optionally a city.
+   * Web search returns citations, which can't be combined with structured output, so callers parse the JSON.
    */
   async searchWeb(
     ctx: LlmContextI,
@@ -355,11 +375,7 @@ export class LlmService {
     location: { country: string; city?: string | null } | null,
     maxSearches = 8,
   ): Promise<string> {
-    if (!ctx.apiKey)
-      throw new AppException(
-        'No Claude API key is available for this request.',
-        400,
-      );
+    const apiKey = this.requireKey(ctx);
     const tools = [
       {
         type: 'web_search_20260209' as const,
@@ -382,7 +398,7 @@ export class LlmService {
     const started = Date.now();
     try {
       for (let turn = 0; turn < 4; turn++) {
-        const msg = await this.client(ctx.apiKey)
+        const msg = await this.client(apiKey)
           .beta.messages.stream({
             model: this.model,
             max_tokens: 16000,
@@ -390,17 +406,10 @@ export class LlmService {
             messages,
             tools,
             output_config: { effort: this.effort },
-            ...(this.useFallbacks
-              ? {
-                  betas: ['server-side-fallback-2026-07-01'],
-                  fallbacks: 'default' as const,
-                }
-              : {}),
+            ...this.fallbackParams(),
           })
           .finalMessage();
-        this.logger.log(
-          `LlmService: ${label} [${ctx.keySource} key] ${msg.model} ${Date.now() - started} ms, in ${msg.usage.input_tokens} / out ${msg.usage.output_tokens} tokens, stop=${msg.stop_reason}`,
-        );
+        this.logUsage(label, ctx, msg, started);
         if (msg.stop_reason === 'pause_turn') {
           // The server paused a long search loop: send the turn back unchanged and it resumes.
           messages = [
@@ -415,22 +424,11 @@ export class LlmService {
         }
         if (msg.stop_reason === 'refusal')
           throw new AppException(`Claude declined the ${label} request.`, 502);
-        const text = msg.content
-          .filter(
-            (b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text',
-          )
-          .map((b) => b.text)
-          .join('');
-        if (!text.trim())
-          throw new AppException(
-            `Claude returned an empty ${label} answer.`,
-            502,
-          );
-        return text;
+        return this.replyText(label, msg);
       }
       throw new AppException(`Claude's ${label} search did not finish.`, 504);
     } catch (err) {
-      // The search provider doesn't support every country as a location (e.g. "NG"): search again
+      // The search provider doesn't accept every country as a location (e.g. "NG"). Search again
       // without the location hint; the prompt already names the country and city.
       if (
         location &&
@@ -455,11 +453,11 @@ export class LlmService {
   }
 }
 
-/** Strip code fences / prose around a JSON object (only needed when the format constraint is unavailable). */
+// Strips code fences or prose around a JSON object. Only needed when the format constraint is unavailable.
 export function extractJson(text: string): string {
-  const t = text.trim();
-  if (t.startsWith('{')) return t;
-  const start = t.indexOf('{');
-  const end = t.lastIndexOf('}');
-  return start >= 0 && end > start ? t.slice(start, end + 1) : t;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) return trimmed;
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  return start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
 }

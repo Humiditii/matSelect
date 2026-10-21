@@ -3,7 +3,7 @@
 import { Penalty } from '@/lib/types';
 import { Chip, NumberInput } from './ui';
 
-/** Same defaults as the engine's DEFAULT_ALPHA. */
+// Same defaults as the engine's DEFAULT_ALPHA.
 const DEFAULT_PENALTY: Penalty = { alphaMass: 1, alphaCo2: 0.1, rationale: '' };
 const MASS_PRESETS = [
   { label: 'Everyday product', value: 1 },
@@ -19,12 +19,13 @@ const CARBON_PRESETS = [
 ];
 
 /**
- * Exchange constants for the balanced goal (Ashby's penalty function Z = cost + α_m·mass + α_CO₂·CO₂):
- * how many dollars one kg saved, and one kg of CO₂ avoided, are worth to the user.
+ * Settings for the balanced goal, which ranks by the penalty Z = cost + alphaMass × mass + alphaCo2 × CO₂.
+ * The user says how many dollars a kg saved, and a kg of CO₂ avoided, are worth to them.
  */
 export function PenaltyEditor({ value, onChange }: { value: Penalty | null | undefined; onChange: (p: Penalty) => void }) {
-  const p = value ?? DEFAULT_PENALTY;
-  const set = (patch: Partial<Penalty>) => onChange({ ...p, ...patch, rationale: '' });
+  const penalty = value ?? DEFAULT_PENALTY;
+  // Once the user edits the values, the AI's rationale for them no longer applies.
+  const update = (patch: Partial<Penalty>) => onChange({ ...penalty, ...patch, rationale: '' });
   return (
     <div className="mt-3 space-y-3 rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200">
       <p className="text-sm text-slate-600">
@@ -37,11 +38,17 @@ export function PenaltyEditor({ value, onChange }: { value: Penalty | null | und
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
             <span className="text-slate-500">$</span>
-            <NumberInput ariaLabel="Dollars per kg saved" className="w-24" min={0} value={p.alphaMass} onChange={(v) => set({ alphaMass: Math.max(0, v ?? 0) })} />
+            <NumberInput
+              ariaLabel="Dollars per kg saved"
+              className="w-24"
+              min={0}
+              value={penalty.alphaMass}
+              onChange={(dollars) => update({ alphaMass: Math.max(0, dollars ?? 0) })}
+            />
           </div>
-          {MASS_PRESETS.map((x) => (
-            <Chip key={x.label} active={p.alphaMass === x.value} onClick={() => set({ alphaMass: x.value })}>
-              {x.label}
+          {MASS_PRESETS.map((preset) => (
+            <Chip key={preset.label} active={penalty.alphaMass === preset.value} onClick={() => update({ alphaMass: preset.value })}>
+              {preset.label}
             </Chip>
           ))}
         </div>
@@ -55,14 +62,14 @@ export function PenaltyEditor({ value, onChange }: { value: Penalty | null | und
               ariaLabel="Dollars per tonne of CO2"
               className="w-24"
               min={0}
-              value={Math.round(p.alphaCo2 * 1000 * 100) / 100}
-              onChange={(v) => set({ alphaCo2: Math.max(0, v ?? 0) / 1000 })}
+              value={Math.round(penalty.alphaCo2 * 1000 * 100) / 100}
+              onChange={(perTonne) => update({ alphaCo2: Math.max(0, perTonne ?? 0) / 1000 })}
             />
             <span className="text-sm text-slate-500">per tonne CO₂e</span>
           </div>
-          {CARBON_PRESETS.map((x) => (
-            <Chip key={x.label} active={p.alphaCo2 === x.value} onClick={() => set({ alphaCo2: x.value })}>
-              {x.label}
+          {CARBON_PRESETS.map((preset) => (
+            <Chip key={preset.label} active={penalty.alphaCo2 === preset.value} onClick={() => update({ alphaCo2: preset.value })}>
+              {preset.label}
             </Chip>
           ))}
         </div>

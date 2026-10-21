@@ -3,20 +3,22 @@ import { AppException } from '../appResponse.parser';
 import { ValidationIssueI } from '../interface/main.interface';
 
 /**
- * Validate a value against a zod schema; on failure throw a 400 AppException
- * carrying `issues: [{ path, message }]` for the web app to show next to the fields.
+ * Validates a value against a zod schema. On failure throws a 400 carrying `issues: [{ path, message }]`,
+ * which the web app shows next to the fields.
  */
 export function zodParse<T extends ZodTypeAny>(
   schema: T,
   value: unknown,
   prefix = '',
 ): z.infer<T> {
-  const r = schema.safeParse(value);
-  if (r.success) return r.data;
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
 
-  const issues: ValidationIssueI[] = r.error.issues.map((i) => ({
-    path: [prefix, ...i.path].filter((p) => p !== '').join('.') || '(body)',
-    message: i.message,
+  const issues: ValidationIssueI[] = result.error.issues.map((issue) => ({
+    path:
+      [prefix, ...issue.path].filter((part) => part !== '').join('.') ||
+      '(body)',
+    message: issue.message,
   }));
 
   throw new AppException(

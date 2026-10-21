@@ -1,12 +1,16 @@
 /**
- * Mock-mode candidate materials: at least 10 per family (plus a few application-specific ones, e.g. friction materials), typical property ranges compiled from handbook /
- * datasheet values (Ashby-style). Used when no Claude API key is configured.
+ * Built-in demo materials, used when no Claude API key is configured. There are at least 10 per family,
+ * plus a few for specific applications such as friction materials. Property ranges are typical handbook
+ * and datasheet values.
  *
- * Compact encoding (expanded by `m()`):
- *   ratings  "fw sw uv ch" as 4 letters A–E (or "-" for unknown)
- *   procs    12 letters, one per process in PROCESSES order, g=good p=possible d=difficult n=no
- *            hand_cut power_cut drill machine weld glue fasten bend cast mould print_3d woodwork
- *   flags    b=brittle t=transparent i=electrical insulator
+ * Each entry is written in a compact form that demoMaterial() expands:
+ *   properties  rho = density (kg/m³), E and G (GPa), s = strength (MPa), K = fracture toughness (MPa·√m),
+ *               tmax and tmin (°C), lam = thermal conductivity (W/m·K), a = thermal expansion (µstrain/K),
+ *               c = price (USD/kg)
+ *   flags       b = brittle, t = transparent, i = electrical insulator
+ *   ratings     4 letters A to E for fresh water, salt water, UV and chemicals ("-" = unknown)
+ *   processes   12 letters in PROCESSES order (g = good, p = possible, d = difficult, n = no):
+ *               hand_cut power_cut drill machine weld glue fasten bend cast mould print_3d woodwork
  */
 import { ecoFor } from './mock.eco';
 import {
@@ -19,69 +23,73 @@ import {
   Range,
 } from 'src/common/domain/domain.types';
 
-type R = Range | null;
-interface P {
-  rho: R;
-  E: R;
-  G: R;
-  s: R;
-  K: R;
-  tmax: R;
-  tmin: R;
-  lam: R;
-  a: R;
-  c: R;
+type MaybeRange = Range | null;
+interface CompactProps {
+  rho: MaybeRange;
+  E: MaybeRange;
+  G: MaybeRange;
+  s: MaybeRange;
+  K: MaybeRange;
+  tmax: MaybeRange;
+  tmin: MaybeRange;
+  lam: MaybeRange;
+  a: MaybeRange;
+  c: MaybeRange;
 }
 
-const PR: Record<string, ProcessRating> = {
+const PROCESS_RATING_CODES: Record<string, ProcessRating> = {
   g: 'good',
   p: 'possible',
   d: 'difficult',
   n: 'no',
 };
 
-function m(
+const parseRating = (code: string) => (code === '-' ? null : (code as Rating));
+
+function demoMaterial(
   family: Family,
   name: string,
   grade: string | null,
-  p: P,
+  props: CompactProps,
   flags: string,
   ratings: string,
-  procs: string,
+  processCodes: string,
   forms: string[],
   notes: string,
   confidence: Confidence = 'high',
   more: { extra?: Material['extra']; sources?: string[] } = {},
 ): Omit<Material, 'id'> {
-  const rt = (ch: string) => (ch === '-' ? null : (ch as Rating));
   return {
     name,
     family,
     grade,
-    density: p.rho,
-    E: p.E,
-    G: p.G,
-    strength: p.s,
-    Kic: p.K,
-    tMax: p.tmax,
-    tMin: p.tmin,
-    lambda: p.lam,
-    alpha: p.a,
-    price: p.c,
+    density: props.rho,
+    E: props.E,
+    G: props.G,
+    strength: props.s,
+    Kic: props.K,
+    tMax: props.tmax,
+    tMin: props.tmin,
+    lambda: props.lam,
+    alpha: props.a,
+    price: props.c,
     brittle: flags.includes('b'),
     transparent: flags.includes('t'),
     electricalInsulator: flags.includes('i'),
     ratings: {
-      fresh_water: rt(ratings[0]),
-      salt_water: rt(ratings[1]),
-      uv: rt(ratings[2]),
-      chemicals: rt(ratings[3]),
+      fresh_water: parseRating(ratings[0]),
+      salt_water: parseRating(ratings[1]),
+      uv: parseRating(ratings[2]),
+      chemicals: parseRating(ratings[3]),
     },
     customRatings: {},
     extra: more.extra ?? {},
     sources: more.sources ?? ['Typical handbook ranges (built-in demo data)'],
     processes: Object.fromEntries(
-      PROCESSES.map((proc, i) => [proc, PR[procs[i]]]),
+      PROCESSES.map((process, i) => [
+        process,
+        PROCESS_RATING_CODES[processCodes[i]],
+      ]),
     ),
     forms,
     confidence,
@@ -99,8 +107,8 @@ function m(
 }
 
 export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
-  // ------------------------------------------------------------------ metals
-  m(
+  // Metals
+  demoMaterial(
     'metal',
     'Mild steel, uncoated',
     'S235JR',
@@ -122,7 +130,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['bar', 'round tube', 'square tube', 'sheet', 'angle'],
     'Cheap, stiff and strong, but rusts quickly outdoors unless painted or galvanised.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Hot-dip galvanised steel',
     'S275 + Z275',
@@ -144,7 +152,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['square tube', 'round tube', 'angle', 'sheet'],
     'Zinc coating protects outdoors for decades; welding burns the zinc off and gives off toxic fumes.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Stainless steel',
     '304 (1.4301)',
@@ -166,7 +174,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'round tube', 'square tube', 'bar'],
     'Corrosion resistant and food safe; tough on saw blades and drill bits.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Marine stainless steel',
     '316L (1.4404)',
@@ -188,7 +196,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'round tube', 'bar', 'wire'],
     'Molybdenum-bearing grade for sea water and chlorides.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Aluminium alloy',
     '6061-T6',
@@ -210,7 +218,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['round tube', 'square tube', 'sheet', 'bar', 'angle'],
     'Light, corrosion resistant structural alloy; welding locally halves its strength.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Aluminium alloy (extrusion)',
     '6063-T6',
@@ -232,7 +240,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['round tube', 'square tube', 'profiles'],
     'The everyday extrusion alloy for ladders, frames and window profiles.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'High-strength aluminium alloy',
     '7075-T6',
@@ -254,7 +262,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['bar', 'round tube', 'plate'],
     'Aerospace alloy; not weldable and less corrosion resistant than 6xxx alloys.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Titanium alloy',
     'Ti-6Al-4V (Grade 5)',
@@ -276,7 +284,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['bar', 'sheet', 'round tube'],
     'Outstanding strength-to-weight and corrosion resistance; expensive and hard to machine.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Free-machining brass',
     'CW614N / C36000',
@@ -298,7 +306,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['bar', 'round tube', 'sheet'],
     'Easy to machine and decorative; heavy and relatively soft.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Grey cast iron',
     'EN-GJL-250',
@@ -321,7 +329,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Cheap castings with good damping; brittle in tension and rusts.',
   ),
 
-  m(
+  demoMaterial(
     'metal',
     'Copper',
     'C11000 (ETP)',
@@ -343,7 +351,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'bar', 'tube'],
     'Best everyday heat and electrical conductor; heavy and soft when annealed.',
   ),
-  m(
+  demoMaterial(
     'metal',
     'Sintered bronze friction material',
     'Cu-based sintered',
@@ -371,8 +379,8 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     },
   ),
 
-  // ---------------------------------------------------------------- polymers
-  m(
+  // Polymers
+  demoMaterial(
     'polymer',
     'Rigid PVC (uPVC)',
     'PVC-U',
@@ -394,7 +402,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['pipe', 'sheet', 'profiles'],
     'Cheap pipes and profiles; flexible for structures and brittle in frost.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'High-density polyethylene',
     'HDPE',
@@ -416,7 +424,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'rod', 'pipe'],
     'Tough, chemical resistant and food safe; low stiffness and creeps under load.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'Polypropylene',
     'PP homopolymer',
@@ -438,7 +446,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'rod', 'mouldings'],
     'Light, cheap and food safe; degrades in sunlight without UV stabiliser.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'Polycarbonate',
     'PC (UV-coated sheet)',
@@ -460,7 +468,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'twin-wall sheet', 'rod'],
     'Clear and almost unbreakable; scratches easily and is attacked by some solvents.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'Acrylic',
     'PMMA (cast)',
@@ -482,7 +490,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'rod', 'tube'],
     'Glass-clear and weatherproof; cracks if drilled carelessly or struck hard.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'Nylon',
     'PA66 (dry as moulded)',
@@ -504,7 +512,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['rod', 'sheet', 'filament'],
     'Tough and wear resistant; absorbs water, which lowers its stiffness by up to half.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'PETG',
     'PETG (sheet / filament)',
@@ -527,7 +535,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Easy to 3D print and cold-bend; sheet is cheap, filament costs far more per kg.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'PLA',
     'PLA (3D-printing filament)',
@@ -550,7 +558,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'The default 3D-printing plastic; softens in a hot car and creeps under load. Printed parts are weaker than these bulk values.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'ABS',
     'ABS (general purpose)',
@@ -572,7 +580,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'filament', 'mouldings'],
     'Tough, easy to glue and machine; yellows and embrittles in sunlight.',
   ),
-  m(
+  demoMaterial(
     'polymer',
     'Acetal',
     'POM-C',
@@ -595,8 +603,8 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Stiff, slippery engineering plastic for gears and bushes; very hard to glue.',
   ),
 
-  // --------------------------------------------------------- ceramics & glass
-  m(
+  // Ceramics & glass
+  demoMaterial(
     'ceramic_glass',
     'Soda-lime float glass (annealed)',
     null,
@@ -618,7 +626,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet'],
     'Ordinary window glass; breaks into dangerous shards.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Toughened (tempered) glass',
     null,
@@ -640,7 +648,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet (cut to size before tempering)'],
     'Four to five times stronger than annealed glass; cannot be cut or drilled after tempering.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Borosilicate glass',
     'Borofloat 33',
@@ -662,7 +670,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'tube'],
     'Low expansion, so it survives temperature shocks that crack ordinary glass.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Alumina ceramic',
     '96% Al₂O₃',
@@ -684,7 +692,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plate', 'rod', 'tube'],
     'Very hard, stiff and heat resistant; needs diamond tools and fails suddenly.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Silicon carbide',
     'Sintered SiC',
@@ -706,7 +714,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plate', 'tube'],
     'Extremely stiff and wear resistant technical ceramic.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Concrete (plain, unreinforced)',
     'C30/37',
@@ -728,7 +736,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['ready-mix', 'precast slab'],
     'Very cheap and durable in compression, but weak in bending without steel reinforcement.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Granite',
     null,
@@ -750,7 +758,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['slab'],
     'Heavy, hard-wearing natural stone; cut with diamond blades.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Porcelain stoneware',
     null,
@@ -772,7 +780,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['tiles', 'slip-cast shapes'],
     'Dense vitrified ceramic for tiles and tableware.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Zirconia ceramic',
     'Y-TZP (3Y)',
@@ -794,7 +802,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['rod', 'plate'],
     'The toughest common ceramic; still brittle compared with metals.',
   ),
-  m(
+  demoMaterial(
     'ceramic_glass',
     'Glass-ceramic',
     'Low-expansion (e.g. cooktop grade)',
@@ -818,8 +826,8 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'medium',
   ),
 
-  // --------------------------------------------------------------- composites
-  m(
+  // Composites
+  demoMaterial(
     'composite',
     'Carbon fibre / epoxy, woven (quasi-isotropic)',
     'CFRP QI laminate',
@@ -841,7 +849,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['round tube', 'sheet', 'plate'],
     'Very light and stiff; dust is hazardous when cutting and impacts can cause hidden damage.',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Carbon fibre / epoxy, unidirectional (pultruded)',
     'CFRP UD',
@@ -863,7 +871,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['rod', 'round tube', 'strip'],
     'Highest stiffness per weight along the fibres; weak across them.',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Glass fibre / polyester (fibreglass)',
     'GFRP chopped strand / woven',
@@ -885,7 +893,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'hand lay-up'],
     'Cheap, tough and weatherproof; used for boats and car body repairs.',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Glass fibre pultruded profile',
     'GFRP vinylester',
@@ -907,7 +915,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['square tube', 'round tube', 'I-beam', 'angle'],
     "Non-conductive, corrosion-proof structural profiles (e.g. electricians' ladders).",
   ),
-  m(
+  demoMaterial(
     'composite',
     'Aramid fibre / epoxy',
     'Kevlar 49 woven',
@@ -930,7 +938,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Extremely impact and cut resistant; very hard to cut cleanly and degrades in UV.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Wood-plastic composite (decking)',
     'WPC',
@@ -953,7 +961,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Low-maintenance outdoor boards; flexible and creeps, so spans must be short.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Glass-filled nylon',
     'PA66-GF30',
@@ -975,7 +983,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['mouldings', 'rod', 'filament'],
     'Stiff, strong engineering plastic for brackets and housings.',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Fibre-cement board',
     null,
@@ -998,7 +1006,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Fire- and rot-proof cladding board; brittle and dusty to cut.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Flax fibre / epoxy',
     'Natural-fibre composite',
@@ -1021,7 +1029,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Renewable alternative to fibreglass with good damping; sensitive to moisture.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'composite',
     'Aluminium / silicon carbide metal-matrix composite',
     'Al-20%SiC',
@@ -1045,7 +1053,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'medium',
   ),
 
-  m(
+  demoMaterial(
     'composite',
     'Semi-metallic brake pad compound',
     null,
@@ -1072,7 +1080,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
       sources: ['Typical friction-material ranges (built-in demo data)'],
     },
   ),
-  m(
+  demoMaterial(
     'composite',
     'Organic (NAO) brake pad compound',
     'Non-asbestos organic',
@@ -1099,7 +1107,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
       sources: ['Typical friction-material ranges (built-in demo data)'],
     },
   ),
-  m(
+  demoMaterial(
     'composite',
     'Ceramic brake pad compound',
     null,
@@ -1126,7 +1134,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
       sources: ['Typical friction-material ranges (built-in demo data)'],
     },
   ),
-  m(
+  demoMaterial(
     'composite',
     'Carbon-ceramic (C/SiC)',
     null,
@@ -1153,7 +1161,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
       sources: ['Typical friction-material ranges (built-in demo data)'],
     },
   ),
-  m(
+  demoMaterial(
     'composite',
     'Carbon-carbon composite',
     'C/C',
@@ -1181,8 +1189,8 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     },
   ),
 
-  // ------------------------------------------------------- wood & natural
-  m(
+  // Wood & natural
+  demoMaterial(
     'wood_natural',
     'Pine / spruce, untreated',
     'C24 structural',
@@ -1204,7 +1212,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plank', 'beam', 'batten'],
     'Cheap and easy to work; strength is a structural-grade value (knots included). Rots outdoors untreated.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Pressure-treated pine',
     'C24, use class 3/4',
@@ -1226,7 +1234,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plank', 'beam', 'post'],
     'Preservative-treated softwood for decks and garden furniture; seal cut ends.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'European oak',
     'D30',
@@ -1248,7 +1256,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plank', 'beam'],
     'Strong, naturally durable hardwood; tannins stain in contact with iron.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Western red cedar',
     null,
@@ -1270,7 +1278,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plank', 'cladding'],
     'Light, naturally rot resistant and stable outdoors; soft and dents easily.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Douglas fir',
     'C24',
@@ -1292,7 +1300,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['plank', 'beam'],
     'One of the strongest softwoods; moderately durable outdoors.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Birch plywood (exterior)',
     'WBP, 12–18 mm',
@@ -1314,7 +1322,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet 1220×2440 mm'],
     'Stable, strong in both directions; seal the edges outdoors.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'MDF',
     'Standard MDF',
@@ -1336,7 +1344,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet'],
     'Cheap, smooth sheet for indoor furniture; sags over time and swells when wet.',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Strand-woven bamboo',
     null,
@@ -1359,7 +1367,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Very hard, dense bamboo board; blunts tools.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Cork (agglomerated)',
     null,
@@ -1382,7 +1390,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Natural, renewable insulation that resists moisture.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'wood_natural',
     'Balsa',
     null,
@@ -1406,8 +1414,8 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'medium',
   ),
 
-  // ----------------------------------------------------- foams & elastomers
-  m(
+  // Foams & elastomers
+  demoMaterial(
     'foam_elastomer',
     'Expanded polystyrene foam',
     'EPS 100',
@@ -1429,7 +1437,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['board', 'moulded shapes'],
     'Cheap, light insulation; crumbles easily and is dissolved by solvents.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Extruded polystyrene foam',
     'XPS',
@@ -1451,7 +1459,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['board'],
     'Stronger, water-resistant insulation board.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Rigid polyurethane / PIR foam',
     'PIR board',
@@ -1473,7 +1481,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['board', 'pour-in-place'],
     'The best common insulating foam per thickness; used in fridges and cool boxes.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Closed-cell polyethylene foam',
     'XLPE foam',
@@ -1495,7 +1503,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'roll'],
     'Soft, flexible padding and insulation; food-safe grades available.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Natural rubber',
     'NR (vulcanised)',
@@ -1517,7 +1525,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'cord'],
     'Very elastic and resilient; perishes in sunlight and ozone.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'EPDM rubber',
     null,
@@ -1539,7 +1547,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'seals'],
     'Weather- and ozone-proof rubber for seals and roofing.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Silicone rubber',
     'VMQ',
@@ -1561,7 +1569,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'casting compound'],
     'Heat- and cold-resistant, food-safe rubber; tears fairly easily.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Thermoplastic polyurethane',
     'TPU 95A',
@@ -1584,7 +1592,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     'Tough, abrasion-resistant flexible plastic; printable.',
     'medium',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Neoprene rubber',
     'CR',
@@ -1606,7 +1614,7 @@ export const MOCK_MATERIALS: Omit<Material, 'id'>[] = [
     ['sheet', 'foam sheet'],
     'Oil- and weather-resistant rubber; foamed for wetsuits and padding.',
   ),
-  m(
+  demoMaterial(
     'foam_elastomer',
     'Silica aerogel blanket',
     null,

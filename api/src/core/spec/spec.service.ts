@@ -4,7 +4,7 @@ import { DesignSpec, ExtractResponse } from 'src/common/domain/domain.types';
 import { LlmContextI } from 'src/common/interface/main.interface';
 import { assertUnits } from 'src/common/util/spec.utils';
 import { LlmService } from 'src/core/llm/llm.service';
-import { mockExtract } from 'src/core/llm/mock/mock.data';
+import { mockExtract } from 'src/core/llm/mock/mock.extraction';
 import {
   EXTRACTION_SCHEMA,
   ExtractionOutput,
@@ -20,55 +20,54 @@ export class SpecService {
   constructor(private readonly llm: LlmService) {}
 
   /**
-   * §6.1 — description → design brief. With a key, Claude does the translation; without one, the
-   * built-in demo rules do. Claude's output must be schema-valid AND a valid DesignSpec with supported
-   * units; validation errors are fed back for one corrective retry.
+   * Turns a description into a design brief. With a key Claude does the translation, otherwise the demo
+   * rules do. Claude's answer must match the schema and also be a valid DesignSpec with supported units;
+   * any errors are sent back for one corrective retry.
    */
   async extractSpec(
-    p: ExtractSpecDto,
+    request: ExtractSpecDto,
     ctx: LlmContextI,
   ): Promise<ExtractResponse> {
-    const audience = p.audience ?? 'everyday';
+    const audience = request.audience ?? 'everyday';
 
     if (!this.llm.isLive(ctx)) {
-      const { spec, questions } = mockExtract(p.text, audience);
+      const { spec, questions } = mockExtract(request.text, audience);
       return { spec: DesignSpec.parse(spec), questions, dataSource: 'mock' };
     }
 
-    const parse = ExtractionOutput.transform((o, zctx) => {
-      const r = DesignSpec.safeParse({
-        ...o.spec,
+    const parse = ExtractionOutput.transform((output, zodCtx) => {
+      const parsed = DesignSpec.safeParse({
+        ...output.spec,
         audience,
-        sourceText: p.text,
+        sourceText: request.text,
       });
-      if (!r.success) {
-        r.error.issues.forEach((i) =>
-          zctx.addIssue({ ...i, path: ['spec', ...i.path] }),
-        );
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues)
+          zodCtx.addIssue({ ...issue, path: ['spec', ...issue.path] });
         return z.NEVER;
       }
       try {
-        assertUnits(r.data);
-      } catch (e) {
-        zctx.addIssue({
+        assertUnits(parsed.data);
+      } catch (err) {
+        zodCtx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['spec'],
-          message: (e as Error).message,
+          message: (err as Error).message,
         });
         return z.NEVER;
       }
-      return { spec: r.data, questions: o.questions };
+      return { spec: parsed.data, questions: output.questions };
     });
 
-    const out = await this.llm.structured(ctx, {
+    const extracted = await this.llm.structured(ctx, {
       label: 'extraction',
       system: EXTRACTION_SYSTEM,
-      user: (errors) => extractionUser(p.text, audience, errors),
+      user: (errors) => extractionUser(request.text, audience, errors),
       schema: EXTRACTION_SCHEMA,
       parse,
       maxTokens: 16000,
     });
 
-    return { ...out, dataSource: 'llm' };
+    return { ...extracted, dataSource: 'llm' };
   }
 }

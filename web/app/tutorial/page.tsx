@@ -22,8 +22,6 @@ const SECTIONS = [
   { id: 'limits', title: 'What it can’t do' },
 ];
 
-const tryIt = (text: string) => `/?q=${encodeURIComponent(text)}`;
-
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
@@ -33,10 +31,10 @@ function Section({ id, title, children }: { id: string; title: string; children:
   );
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Step({ number, title, children }: { number: number; title: string; children: ReactNode }) {
   return (
     <div className="not-prose flex gap-3 rounded-xl bg-slate-50 p-4">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white">{n}</span>
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-bold text-white">{number}</span>
       <div className="text-sm text-slate-700">
         <p className="font-semibold text-slate-900">{title}</p>
         <div className="mt-1 space-y-1">{children}</div>
@@ -57,7 +55,7 @@ function Callout({ icon, children }: { icon: string; children: ReactNode }) {
 function TryIt({ text, label = 'Try it' }: { text: string; label?: string }) {
   return (
     <Link
-      href={tryIt(text)}
+      href={`/?q=${encodeURIComponent(text)}`}
       className="not-prose inline-flex items-center gap-1 rounded-full bg-brand-600 px-3 py-1 text-xs font-semibold text-white no-underline hover:bg-brand-700"
     >
       {label} →
@@ -65,11 +63,11 @@ function TryIt({ text, label = 'Try it' }: { text: string; label?: string }) {
   );
 }
 
-function Faq({ q, children }: { q: string; children: ReactNode }) {
+function Faq({ question, children }: { question: string; children: ReactNode }) {
   return (
     <details className="not-prose group rounded-xl border border-slate-200 p-3 [&_summary::-webkit-details-marker]:hidden">
       <summary className="flex cursor-pointer select-none items-center justify-between gap-3 text-sm font-semibold text-slate-900">
-        {q}
+        {question}
         <span aria-hidden className="text-slate-400 transition group-open:rotate-180">⌄</span>
       </summary>
       <div className="mt-2 space-y-2 text-sm text-slate-700">{children}</div>
@@ -80,15 +78,14 @@ function Faq({ q, children }: { q: string; children: ReactNode }) {
 export default function TutorialPage() {
   return (
     <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-8">
-      {/* Table of contents */}
       <aside className="mb-6 lg:mb-0">
         <nav className="lg:sticky lg:top-20">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">On this page</p>
           <ol className="flex gap-2 overflow-x-auto pb-2 text-sm lg:flex-col lg:gap-1 lg:overflow-visible">
-            {SECTIONS.map((s) => (
-              <li key={s.id} className="shrink-0">
-                <a href={`#${s.id}`} className="block whitespace-nowrap rounded-lg px-2 py-1 text-slate-600 hover:bg-white hover:text-slate-900 lg:whitespace-normal">
-                  {s.title}
+            {SECTIONS.map((section) => (
+              <li key={section.id} className="shrink-0">
+                <a href={`#${section.id}`} className="block whitespace-nowrap rounded-lg px-2 py-1 text-slate-600 hover:bg-white hover:text-slate-900 lg:whitespace-normal">
+                  {section.title}
                 </a>
               </li>
             ))}
@@ -118,11 +115,11 @@ export default function TutorialPage() {
               ['✍️', 'You describe', 'A sentence or two in your own words.'],
               ['🧭', 'It builds a brief', 'Goal and requirements you can check and adjust.'],
               ['🏆', 'It calculates', 'Ranked materials, sizes and plain-language reasons.'],
-            ].map(([i, t, d]) => (
-              <div key={t} className="rounded-xl bg-slate-50 p-4 text-sm">
-                <div className="text-2xl">{i}</div>
-                <p className="mt-1 font-semibold text-slate-900">{t}</p>
-                <p className="text-slate-600">{d}</p>
+            ].map(([icon, title, text]) => (
+              <div key={title} className="rounded-xl bg-slate-50 p-4 text-sm">
+                <div className="text-2xl">{icon}</div>
+                <p className="mt-1 font-semibold text-slate-900">{title}</p>
+                <p className="text-slate-600">{text}</p>
               </div>
             ))}
           </div>
@@ -133,15 +130,15 @@ export default function TutorialPage() {
 
         <Section id="quick-start" title="Quick start">
           <div className="not-prose space-y-3">
-            <Step n={1} title="Describe it">
+            <Step number={1} title="Describe it">
               <p>
                 On the <Link href="/" className="text-brand-700 underline">home page</Link>, type what you want to build — or click an example chip — and choose who the explanation is for. Press <kbd>Continue</kbd> (or Ctrl/⌘ + Enter).
               </p>
             </Step>
-            <Step n={2} title="Check the brief">
+            <Step number={2} title="Check the brief">
               <p>Remove anything that’s wrong, add anything missing in plain words (“it must survive 600 °C”), then press <kbd>Find materials →</kbd>.</p>
             </Step>
-            <Step n={3} title="Read the results">
+            <Step number={3} title="Read the results">
               <p>Look at the top picks, read the explanation, and check why your “obvious” choice was ruled out. Done in seconds with demo data, about a minute with Claude.</p>
             </Step>
           </div>
@@ -369,7 +366,7 @@ export default function TutorialPage() {
           </p>
           <h3>Add your key</h3>
           <div className="not-prose space-y-3">
-            <Step n={1} title="Get a key">
+            <Step number={1} title="Get a key">
               <p>
                 Sign in at{' '}
                 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-brand-700 underline">
@@ -378,12 +375,12 @@ export default function TutorialPage() {
                 , add a payment method under <em>Billing</em>, then <em>API Keys → Create Key</em>. Copy it — it starts with <code>sk-ant-</code> and is shown only once.
               </p>
             </Step>
-            <Step n={2} title="Open the key settings">
+            <Step number={2} title="Open the key settings">
               <p>
                 Click the badge in the top-right corner, or: <OpenKeyDialogButton />
               </p>
             </Step>
-            <Step n={3} title="Paste, check and save">
+            <Step number={3} title="Paste, check and save">
               <p>
                 Paste the key and press <kbd>Check &amp; save</kbd>. MatSelect checks it with a free call (no tokens used). Tick <em>Remember on this device</em> to keep it after you close the tab.
               </p>
@@ -434,10 +431,10 @@ export default function TutorialPage() {
               ['Likely range (p10–p90)', 'Across those runs, 80% of the results fell inside this range.'],
               ['AI-estimated data & confidence', 'Property values come from Claude’s knowledge (or the demo set), not a certified database. Each material has a confidence level; always confirm with the supplier’s datasheet.'],
               ['Number check', 'After the explanation is written, code checks that every number in it appears in the calculation results. That’s the ✓ badge.'],
-            ].map(([t, d]) => (
-              <div key={t} className="rounded-xl bg-slate-50 p-3">
-                <dt className="font-semibold text-slate-900">{t}</dt>
-                <dd className="mt-1">{d}</dd>
+            ].map(([term, definition]) => (
+              <div key={term} className="rounded-xl bg-slate-50 p-3">
+                <dt className="font-semibold text-slate-900">{term}</dt>
+                <dd className="mt-1">{definition}</dd>
               </div>
             ))}
           </dl>
@@ -445,28 +442,28 @@ export default function TutorialPage() {
 
         <Section id="faq" title="Questions & troubleshooting">
           <div className="not-prose space-y-2">
-            <Faq q="The material I expected was ruled out — why?">
+            <Faq question="The material I expected was ruled out — why?">
               <p>Open <strong>Ruled out</strong> and search for it: the exact reason is listed. Often it’s a requirement that’s stricter than you need (e.g. a tool you listed, or an environment). Remove it in the brief and run again.</p>
             </Faq>
-            <Faq q="What does “Not evaluated” mean?">
+            <Faq question="What does “Not evaluated” mean?">
               <p>The data needed for a requirement or the ranking was missing (or physically impossible) for that material. MatSelect never fills in missing data, so the material is set aside rather than guessed.</p>
             </Faq>
-            <Faq q="Nothing fits. What now?">
+            <Faq question="Nothing fits. What now?">
               <p>Look at the most common reasons in <strong>Ruled out</strong> and relax the strictest requirement — usually tools, environment, a temperature or a budget. Press <kbd>✏️ Change requirements</kbd>.</p>
             </Faq>
-            <Faq q="Why do I get different materials when I run it again?">
+            <Faq question="Why do I get different materials when I run it again?">
               <p>With Claude, the list of candidates can vary a little between runs. For the same candidates, the calculation is fully repeatable.</p>
             </Faq>
-            <Faq q="Can I trust the numbers?">
+            <Faq question="Can I trust the numbers?">
               <p>The calculations are deterministic and tested. The property data is AI-estimated: treat it as a well-informed starting point and confirm the final choice with supplier datasheets — and, for anything safety-critical, with a qualified engineer.</p>
             </Faq>
-            <Faq q="How do I change something after seeing the results?">
+            <Faq question="How do I change something after seeing the results?">
               <p>Press <kbd>✏️ Change requirements</kbd> on the results page. Your brief opens again with everything as you left it.</p>
             </Faq>
-            <Faq q="It says “Cannot reach the MatSelect API”.">
+            <Faq question="It says “Cannot reach the MatSelect API”.">
               <p>The backend isn’t running. Start it with <code>npm run dev</code> in the project folder (MongoDB must be running too).</p>
             </Faq>
-            <Faq q="My API key was rejected.">
+            <Faq question="My API key was rejected.">
               <p>Check it was copied completely, that it hasn’t been revoked, and that your Anthropic account has credit. Then paste it again in the key settings.</p>
             </Faq>
           </div>

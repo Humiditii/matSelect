@@ -1,10 +1,10 @@
 /**
- * JSON Schemas for Claude's structured outputs, plus zod schemas that validate (and normalise) what comes back.
+ * JSON Schemas for Claude's structured outputs, plus zod schemas that validate and normalise the replies.
  *
- * Structured-output schemas must set `additionalProperties: false` on every object, list every property
- * as required, and avoid numeric/length constraints — so nullability is expressed with anyOf, ranges are
- * {min, max} objects, and question option values are JSON-encoded strings. Bounds are enforced afterwards
- * in zod and in the engine's plausibility checks.
+ * Structured outputs need `additionalProperties: false` on every object, every property listed as required,
+ * and no numeric or length limits. So nullable fields use anyOf, ranges are {min, max} objects, and question
+ * option values are JSON-encoded strings. Bounds are enforced afterwards in zod and in the engine's
+ * plausibility checks.
  */
 import { z } from 'zod';
 import {
@@ -76,9 +76,7 @@ const range = (description: string) =>
     ),
   );
 
-// ---------------------------------------------------------------------------
-// Extraction
-// ---------------------------------------------------------------------------
+// Extraction: the design spec and follow-up questions.
 export const EXTRACTION_SCHEMA: Json = obj({
   spec: obj({
     title: str('Short name of the part, e.g. "Ladder side rail"'),
@@ -200,8 +198,10 @@ export const EXTRACTION_SCHEMA: Json = obj({
   ),
 });
 
-const RangeObj = z.object({ min: z.number(), max: z.number() });
-const Qty = z.object({ value: z.number(), unit: z.string() }).nullable();
+const MinMax = z.object({ min: z.number(), max: z.number() });
+const QuantityOutput = z
+  .object({ value: z.number(), unit: z.string() })
+  .nullable();
 
 const parseJson = (s: string, ctx: z.RefinementCtx): unknown => {
   try {
@@ -215,7 +215,7 @@ const parseJson = (s: string, ctx: z.RefinementCtx): unknown => {
   }
 };
 
-/** Validates Claude's extraction output and maps it onto the DesignSpec input shape. */
+// Validates Claude's extraction and maps it onto the DesignSpec input shape.
 export const ExtractionOutput = z.object({
   spec: z
     .object({
@@ -224,18 +224,18 @@ export const ExtractionOutput = z.object({
       component: z.enum(COMPONENTS),
       objective: z.enum(OBJECTIVES),
       criteria: z.array(z.enum(CRITERIA)),
-      load: Qty,
-      length: Qty,
-      maxDeflection: Qty,
+      load: QuantityOutput,
+      length: QuantityOutput,
+      maxDeflection: QuantityOutput,
       maxTwistDeg: z.number().nullable(),
       support: z.enum(SUPPORTS),
       endCondition: z.enum(END_CONDITIONS),
       section: z.enum(SECTIONS),
-      sectionWidth: Qty,
+      sectionWidth: QuantityOutput,
       tubeRatio: z.number(),
       environment: z.array(z.enum(ENVIRONMENTS)),
       customEnvironments: z.array(z.string()).default([]),
-      tempRangeC: RangeObj.nullable(),
+      tempRangeC: MinMax.nullable(),
       requiredProcesses: z.array(z.enum(PROCESSES)),
       mustHave: z.array(z.enum(MUST_HAVES)),
       excludeFamilies: z.array(z.enum(FAMILIES)),
@@ -321,9 +321,7 @@ export const ExtractionOutput = z.object({
     ),
 });
 
-// ---------------------------------------------------------------------------
-// Candidate materials
-// ---------------------------------------------------------------------------
+// Candidate materials for one family.
 const RANGE_DESCRIPTIONS: Record<(typeof PROPERTY_KEYS)[number], string> = {
   density: 'Density, kg/m³',
   E: "Young's modulus, GPa",
@@ -441,7 +439,7 @@ export const CANDIDATE_SCHEMA: Json = obj({
   ),
 });
 
-const RangeOrNull = RangeObj.nullable();
+const RangeOrNull = MinMax.nullable();
 const RatingOrNull = z.enum(RATINGS).nullable();
 
 export const CandidateOutputItem = z.object({
@@ -493,21 +491,28 @@ export const CandidateOutputItem = z.object({
   confidence: z.enum(CONFIDENCES),
   notes: z.string(),
 });
-/** maxItems is not expressible in structured outputs, so the 25-item cap (§6.2) is applied here. */
+// Structured outputs cannot express maxItems, so the 25-material cap is applied here.
 export const CandidateOutput = z.object({
   materials: z.array(CandidateOutputItem).transform((m) => m.slice(0, 25)),
 });
 export type CandidateOutputItem = z.infer<typeof CandidateOutputItem>;
 
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60);
+// A readable id made from `text`, with -2, -3... added when it is already taken.
+export function uniqueId(text: string, usedIds: Set<string>): string {
+  const baseId =
+    text
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60) || 'material';
+  let id = baseId;
+  for (let n = 2; usedIds.has(id); n++) id = `${baseId}-${n}`;
+  usedIds.add(id);
+  return id;
+}
 
-/** Convert Claude's material objects into domain Materials with stable, unique ids. */
+// Converts Claude's materials into domain Materials with stable, unique ids.
 export function toMaterials(
   items: CandidateOutputItem[],
   family: Family,
@@ -515,85 +520,83 @@ export function toMaterials(
   customEnvironments: string[] = [],
   extraKeys: string[] = [],
 ): Material[] {
+  const toRange = (x: { min: number; max: number } | null) =>
+    x ? ([x.min, x.max] as [number, number]) : null;
   const out: Material[] = [];
-  for (const it of items) {
-    if (it.family !== family) continue; // §6.2: drop materials whose family doesn't match the request
-    const base =
-      slug(`${family}-${it.name}-${it.grade ?? ''}`) || `${family}-material`;
-    let id = base;
-    for (let n = 2; usedIds.has(id); n++) id = `${base}-${n}`;
-    usedIds.add(id);
-    const r = (x: { min: number; max: number } | null) =>
-      x ? ([x.min, x.max] as [number, number]) : null;
+  for (const item of items) {
+    // Claude occasionally returns a material from another family; drop item.
+    if (item.family !== family) continue;
+    const id = uniqueId(`${family}-${item.name}-${item.grade ?? ''}`, usedIds);
     out.push({
       id,
-      name: it.name.trim().slice(0, 120),
-      family: it.family,
-      grade: it.grade?.trim().slice(0, 80) || null,
-      density: r(it.density),
-      E: r(it.E),
-      G: r(it.G),
-      strength: r(it.strength),
-      Kic: r(it.Kic),
-      tMax: r(it.tMax),
-      tMin: r(it.tMin),
-      lambda: r(it.lambda),
-      alpha: r(it.alpha),
-      price: r(it.price),
-      co2: r(it.co2),
-      embodiedEnergy: r(it.embodiedEnergy),
-      brittle: it.brittle,
-      transparent: it.transparent,
-      electricalInsulator: it.electricalInsulator,
-      ratings: it.ratings,
-      customRatings: matchCustomRatings(it.customRatings, customEnvironments),
+      name: item.name.trim().slice(0, 120),
+      family: item.family,
+      grade: item.grade?.trim().slice(0, 80) || null,
+      density: toRange(item.density),
+      E: toRange(item.E),
+      G: toRange(item.G),
+      strength: toRange(item.strength),
+      Kic: toRange(item.Kic),
+      tMax: toRange(item.tMax),
+      tMin: toRange(item.tMin),
+      lambda: toRange(item.lambda),
+      alpha: toRange(item.alpha),
+      price: toRange(item.price),
+      co2: toRange(item.co2),
+      embodiedEnergy: toRange(item.embodiedEnergy),
+      brittle: item.brittle,
+      transparent: item.transparent,
+      electricalInsulator: item.electricalInsulator,
+      ratings: item.ratings,
+      customRatings: matchCustomRatings(item.customRatings, customEnvironments),
       extra: Object.fromEntries(
-        extraKeys.map((k) => {
-          const e = it.extraProperties.find((x) => x.key === k);
+        extraKeys.map((key) => {
+          const value = item.extraProperties.find((x) => x.key === key);
           return [
-            k,
-            e && e.min !== null && e.max !== null
-              ? ([e.min, e.max] as [number, number])
+            key,
+            value && value.min !== null && value.max !== null
+              ? ([value.min, value.max] as [number, number])
               : null,
           ];
         }),
       ),
-      sources: it.sources.slice(0, 3).map((x) => x.slice(0, 240)),
-      recyclability: it.recyclability,
-      renewable: it.renewable,
-      biodegradable: it.biodegradable,
-      criticalElements: it.criticalElements
+      sources: item.sources.slice(0, 3).map((x) => x.slice(0, 240)),
+      recyclability: item.recyclability,
+      renewable: item.renewable,
+      biodegradable: item.biodegradable,
+      criticalElements: item.criticalElements
         .slice(0, 12)
         .map((x) => x.slice(0, 40)),
-      hazards: it.hazards.slice(0, 3).map((x) => x.slice(0, 160)),
-      processingTips: it.processingTips.slice(0, 4).map((x) => x.slice(0, 220)),
-      processes: it.processes,
-      forms: it.forms.slice(0, 12).map((f) => f.slice(0, 80)),
-      confidence: it.confidence,
-      notes: it.notes.slice(0, 600),
+      hazards: item.hazards.slice(0, 3).map((x) => x.slice(0, 160)),
+      processingTips: item.processingTips
+        .slice(0, 4)
+        .map((x) => x.slice(0, 220)),
+      processes: item.processes,
+      forms: item.forms.slice(0, 12).map((f) => f.slice(0, 80)),
+      confidence: item.confidence,
+      notes: item.notes.slice(0, 600),
     });
   }
   return out;
 }
 
 /**
- * Key Claude's per-environment ratings by the user's own wording. Matches by text first; if Claude
- * paraphrased an environment, falls back to the position (the prompt asks for the same order).
+ * Keys Claude's per-environment ratings by the user's own wording. Matches by text first. If Claude
+ * paraphrased an environment, falls back to its position, since the prompt asks for the same order.
  */
 export function matchCustomRatings(
   given: { environment: string; rating: Material['customRatings'][string] }[],
   customEnvironments: string[],
 ): Material['customRatings'] {
   const byText = new Map(given.map((g) => [normEnv(g.environment), g.rating]));
+  const sameCount = given.length === customEnvironments.length;
   const out: Material['customRatings'] = {};
-  customEnvironments.forEach((env, i) => {
-    const key = normEnv(env);
-    const r = byText.has(key)
-      ? byText.get(key)
-      : given.length === customEnvironments.length
-        ? given[i]?.rating
-        : undefined;
-    if (r !== undefined) out[key] = r;
+  customEnvironments.forEach((environment, i) => {
+    const key = normEnv(environment);
+    let rating: Material['customRatings'][string] | undefined;
+    if (byText.has(key)) rating = byText.get(key);
+    else if (sameCount) rating = given[i]?.rating;
+    if (rating !== undefined) out[key] = rating;
   });
   return out;
 }

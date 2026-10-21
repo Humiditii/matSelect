@@ -1,6 +1,6 @@
 import { Quantity } from 'src/common/domain/domain.types';
 
-export const G0 = 9.80665; // standard gravity, m/s²
+const G0 = 9.80665; // standard gravity, m/s²
 const LBF_N = 4.4482216152605;
 
 export class UnitError extends Error {
@@ -16,8 +16,9 @@ export class UnitError extends Error {
   }
 }
 
-/** normalise unit spelling: case-insensitive aliases, "·", "*", "-" and spaces all accepted for products. */
-function norm(unit: string): string {
+// Case-insensitive, and "·", "*", "-", "." and spaces are all accepted between
+// units, so "N·m", "N m" and "nm" match the same entry.
+function normaliseUnit(unit: string): string {
   return unit
     .trim()
     .toLowerCase()
@@ -87,22 +88,23 @@ export const SUPPORTED_UNITS = {
 };
 
 function convert(
-  q: Quantity,
-  table: Record<string, number>,
+  quantity: Quantity,
+  toSi: Record<string, number>,
   field: string,
   supported: string[],
 ): number {
-  const raw = q.unit.trim().toLowerCase();
-  const factor = table[norm(q.unit)] ?? table[raw];
-  if (factor === undefined) throw new UnitError(field, q.unit, supported);
-  return q.value * factor;
+  const factor = toSi[normaliseUnit(quantity.unit)];
+  if (factor === undefined)
+    throw new UnitError(field, quantity.unit, supported);
+  return quantity.value * factor;
 }
 
-export const toNewtons = (q: Quantity, field = 'load') =>
-  convert(q, FORCE, field, SUPPORTED_UNITS.force);
-export const toMetres = (q: Quantity, field = 'length') =>
-  convert(q, LENGTH, field, SUPPORTED_UNITS.length);
-export const toNewtonMetres = (q: Quantity, field = 'load') =>
-  convert(q, TORQUE, field, SUPPORTED_UNITS.torque);
+export const toNewtons = (quantity: Quantity, field = 'load') =>
+  convert(quantity, FORCE, field, SUPPORTED_UNITS.force);
+export const toMetres = (quantity: Quantity, field = 'length') =>
+  convert(quantity, LENGTH, field, SUPPORTED_UNITS.length);
+export const toNewtonMetres = (quantity: Quantity, field = 'load') =>
+  convert(quantity, TORQUE, field, SUPPORTED_UNITS.torque);
 
-export const isTorqueUnit = (unit: string) => TORQUE[norm(unit)] !== undefined;
+export const isTorqueUnit = (unit: string) =>
+  TORQUE[normaliseUnit(unit)] !== undefined;

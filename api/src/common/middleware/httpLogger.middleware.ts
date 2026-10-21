@@ -2,7 +2,7 @@ import { Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 import { AppLoggerService } from '../logging/logging.service';
 
-/** Logs every request: method, URL, status, size, time. Never logs headers (they may carry an API key). */
+// Logs method, URL, status, size and time of every request. Headers are never logged: they may carry an API key.
 @Injectable()
 export class HttpLogger implements NestMiddleware {
   constructor(private readonly logger: AppLoggerService) {}

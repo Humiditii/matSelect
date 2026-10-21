@@ -1,8 +1,7 @@
-/**
- * Demo-mode handling of custom environments. With Claude, every material gets its own rating for each
- * custom environment. The built-in demo data has no such ratings, so the user's words are mapped onto the
- * closest built-in environments instead — and the result says so.
- */
+// Demo-mode handling of custom environments. With Claude, every material gets
+// its own rating for each custom environment. The built-in demo data has no
+// such ratings, so the user's words are mapped onto the closest built-in
+// environments instead, and the result says so.
 import { DesignSpec, Environment } from 'src/common/domain/domain.types';
 import { ENV_LABEL } from './labels';
 
@@ -28,33 +27,33 @@ const KEYWORDS: [RegExp, Environment[]][] = [
 ];
 
 export function impliedEnvironments(text: string): Environment[] {
-  const t = text.toLowerCase();
-  const out = new Set<Environment>();
-  for (const [re, envs] of KEYWORDS)
-    if (re.test(t)) envs.forEach((e) => out.add(e));
-  return [...out];
+  const lowerCase = text.toLowerCase();
+  const found = new Set<Environment>();
+  for (const [pattern, environments] of KEYWORDS)
+    if (pattern.test(lowerCase)) environments.forEach((e) => found.add(e));
+  return [...found];
 }
 
-/** Replace custom environments by the closest built-in ones; returns the spec for the engine and notes for the user. */
+/** Replaces custom environments with the closest built-in ones. Returns the spec for the engine and notes for the user. */
 export function mapCustomEnvironments(spec: DesignSpec): {
   spec: DesignSpec;
   notes: string[];
 } {
   if (!spec.customEnvironments.length) return { spec, notes: [] };
-  const env = new Set<Environment>(spec.environment);
+  const environments = new Set<Environment>(spec.environment);
   const notes: string[] = [];
-  for (const c of spec.customEnvironments) {
-    const implied = impliedEnvironments(c);
-    implied.forEach((e) => env.add(e));
+  for (const custom of spec.customEnvironments) {
+    const implied = impliedEnvironments(custom);
+    implied.forEach((e) => environments.add(e));
     notes.push(
       implied.length
-        ? `Demo mode can't rate materials for “${c}”, so it was checked as: ${implied.map((e) => ENV_LABEL[e]).join(' + ')}. Add a Claude API key for a material-by-material rating.`
-        : `Demo mode can't rate materials for “${c}”, and it doesn't match any built-in condition, so it was NOT checked. Add a Claude API key to have every material rated for it.`,
+        ? `Demo mode can't rate materials for “${custom}”, so it was checked as: ${implied.map((e) => ENV_LABEL[e]).join(' + ')}. Add a Claude API key for a material-by-material rating.`
+        : `Demo mode can't rate materials for “${custom}”, and it doesn't match any built-in condition, so it was NOT checked. Add a Claude API key to have every material rated for it.`,
     );
   }
-  if (env.size > 1) env.delete('indoor');
+  if (environments.size > 1) environments.delete('indoor');
   return {
-    spec: { ...spec, environment: [...env], customEnvironments: [] },
+    spec: { ...spec, environment: [...environments], customEnvironments: [] },
     notes,
   };
 }

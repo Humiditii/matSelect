@@ -3,9 +3,25 @@
 import Link from 'next/link';
 import { ReactNode, useEffect, useState } from 'react';
 
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
+export const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' ');
 
-export function Card({ children, className, title, subtitle, action }: { children: ReactNode; className?: string; title?: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
+export function toggleItem<T>(list: T[], item: T): T[] {
+  return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+}
+
+export function Card({
+  children,
+  className,
+  title,
+  subtitle,
+  action,
+}: {
+  children: ReactNode;
+  className?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
     <section className={cx('animate-fade-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6', className)}>
       {(title || action) && (
@@ -25,18 +41,25 @@ export function Card({ children, className, title, subtitle, action }: { childre
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
-export function buttonClass(variant: Variant = 'primary', size: Size = 'md', className?: string) {
-  const styles = {
-    primary: 'bg-brand-600 text-white shadow-sm hover:bg-brand-700 focus-visible:outline-brand-600 disabled:bg-brand-300',
-    secondary: 'bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:text-slate-400',
-    ghost: 'text-slate-600 hover:bg-slate-100 disabled:text-slate-300',
-    danger: 'bg-rose-600 text-white hover:bg-rose-700',
-  }[variant];
-  const sizes = { sm: 'px-2.5 py-1.5 text-sm', md: 'px-4 py-2 text-sm', lg: 'px-5 py-3 text-base' }[size];
+const BUTTON_VARIANT_STYLE: Record<Variant, string> = {
+  primary: 'bg-brand-600 text-white shadow-sm hover:bg-brand-700 focus-visible:outline-brand-600 disabled:bg-brand-300',
+  secondary: 'bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:text-slate-400',
+  ghost: 'text-slate-600 hover:bg-slate-100 disabled:text-slate-300',
+  danger: 'bg-rose-600 text-white hover:bg-rose-700',
+};
+
+const BUTTON_SIZE_STYLE: Record<Size, string> = {
+  sm: 'px-2.5 py-1.5 text-sm',
+  md: 'px-4 py-2 text-sm',
+  lg: 'px-5 py-3 text-base',
+};
+
+function buttonClass(variant: Variant = 'primary', size: Size = 'md', className?: string) {
   return cx(
-    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed',
-    styles,
-    sizes,
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl font-semibold transition',
+    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed',
+    BUTTON_VARIANT_STYLE[variant],
+    BUTTON_SIZE_STYLE[size],
     className,
   );
 }
@@ -70,7 +93,19 @@ export function Button({
   );
 }
 
-export function ButtonLink({ href, children, variant = 'primary', size = 'md', className }: { href: string; children: ReactNode; variant?: Variant; size?: Size; className?: string }) {
+export function ButtonLink({
+  href,
+  children,
+  variant = 'primary',
+  size = 'md',
+  className,
+}: {
+  href: string;
+  children: ReactNode;
+  variant?: Variant;
+  size?: Size;
+  className?: string;
+}) {
   return (
     <Link href={href} className={buttonClass(variant, size, className)}>
       {children}
@@ -87,7 +122,6 @@ export function Spinner({ className = 'h-5 w-5' }: { className?: string }) {
   );
 }
 
-/** Toggleable pill used for multi-select options. */
 export function Chip({
   active,
   onClick,
@@ -101,7 +135,7 @@ export function Chip({
   title?: string;
   tone?: 'brand' | 'rose';
 }) {
-  const on = tone === 'rose' ? 'bg-rose-50 text-rose-700 ring-rose-300' : 'bg-brand-50 text-brand-700 ring-brand-300';
+  const activeStyle = tone === 'rose' ? 'bg-rose-50 text-rose-700 ring-rose-300' : 'bg-brand-50 text-brand-700 ring-brand-300';
   return (
     <button
       type="button"
@@ -110,7 +144,7 @@ export function Chip({
       onClick={onClick}
       className={cx(
         'inline-flex select-none items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition',
-        active ? on : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300',
+        active ? activeStyle : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300',
       )}
     >
       {active && <span aria-hidden>✓</span>}
@@ -119,7 +153,6 @@ export function Chip({
   );
 }
 
-/** Single-choice segmented control. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -135,22 +168,22 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div role="radiogroup" className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
-      {options.map((o) => (
+      {options.map((option) => (
         <button
-          key={o.value}
+          key={option.value}
           type="button"
           role="radio"
-          aria-checked={value === o.value}
-          title={o.title}
+          aria-checked={value === option.value}
+          title={option.title}
           disabled={disabled}
-          onClick={() => onChange(o.value)}
+          onClick={() => onChange(option.value)}
           className={cx(
             'rounded-lg font-medium transition disabled:cursor-not-allowed',
             size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm',
-            value === o.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+            value === option.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
           )}
         >
-          {o.label}
+          {option.label}
         </button>
       ))}
     </div>
@@ -159,23 +192,38 @@ export function Segmented<T extends string>({
 
 export function Badge({ children, className, title }: { children: ReactNode; className?: string; title?: string }) {
   return (
-    <span title={title} className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset', className ?? 'bg-slate-50 text-slate-600 ring-slate-200')}>
+    <span
+      title={title}
+      className={cx(
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
+        className ?? 'bg-slate-50 text-slate-600 ring-slate-200',
+      )}
+    >
       {children}
     </span>
   );
 }
 
-export function Banner({ tone, title, children, icon }: { tone: 'info' | 'warn' | 'danger' | 'success'; title?: ReactNode; children: ReactNode; icon?: string }) {
-  const s = {
-    info: 'border-sky-200 bg-sky-50 text-sky-900',
-    warn: 'border-amber-200 bg-amber-50 text-amber-900',
-    danger: 'border-rose-300 bg-rose-50 text-rose-900',
-    success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  }[tone];
-  const i = icon ?? { info: 'ℹ️', warn: '⚠️', danger: '⛔', success: '✅' }[tone];
+type BannerTone = 'info' | 'warn' | 'danger' | 'success';
+
+const BANNER_STYLE: Record<BannerTone, string> = {
+  info: 'border-sky-200 bg-sky-50 text-sky-900',
+  warn: 'border-amber-200 bg-amber-50 text-amber-900',
+  danger: 'border-rose-300 bg-rose-50 text-rose-900',
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+};
+
+const BANNER_ICON: Record<BannerTone, string> = { info: 'ℹ️', warn: '⚠️', danger: '⛔', success: '✅' };
+
+export function Banner({ tone, title, children, icon }: { tone: BannerTone; title?: ReactNode; children: ReactNode; icon?: string }) {
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={cx('animate-fade-in flex gap-3 rounded-xl border p-3 text-sm sm:p-4', s)}>
-      <span aria-hidden className="text-base leading-5">{i}</span>
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={cx('animate-fade-in flex gap-3 rounded-xl border p-3 text-sm sm:p-4', BANNER_STYLE[tone])}
+    >
+      <span aria-hidden className="text-base leading-5">
+        {icon ?? BANNER_ICON[tone]}
+      </span>
       <div className="min-w-0 flex-1">
         {title && <p className="font-semibold">{title}</p>}
         <div className={cx(title ? 'mt-1' : '', 'space-y-1')}>{children}</div>
@@ -197,9 +245,7 @@ export function Field({ label, hint, children, className }: { label: ReactNode; 
 export const inputClass =
   'block w-full rounded-xl border-0 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-brand-500';
 
-/**
- * Number input that keeps the user's typing (e.g. "1." or "") while editing and reports a number or null.
- */
+/** A number input that keeps what the user is typing (such as "1." or "") and reports a number or null. */
 export function NumberInput({
   value,
   onChange,
@@ -218,6 +264,7 @@ export function NumberInput({
   ariaLabel?: string;
 }) {
   const [text, setText] = useState(value === null ? '' : String(value));
+  // Only overwrite the text when the value changed from outside, not while the user is typing it.
   useEffect(() => {
     const parsed = text.trim() === '' ? null : Number(text);
     if (parsed !== value) setText(value === null ? '' : String(value));
@@ -235,8 +282,8 @@ export function NumberInput({
       placeholder={placeholder}
       onChange={(e) => {
         setText(e.target.value);
-        const v = e.target.value.trim() === '' ? null : Number(e.target.value);
-        if (v === null || Number.isFinite(v)) onChange(v);
+        const parsed = e.target.value.trim() === '' ? null : Number(e.target.value);
+        if (parsed === null || Number.isFinite(parsed)) onChange(parsed);
       }}
     />
   );
@@ -270,7 +317,7 @@ export function QuantityInput({
         value={value?.value ?? null}
         placeholder={placeholder}
         min={0}
-        onChange={(v) => onChange(v === null || v <= 0 ? null : { value: v, unit })}
+        onChange={(amount) => onChange(amount === null || amount <= 0 ? null : { value: amount, unit })}
       />
       <select
         aria-label={`${ariaLabel ?? 'quantity'} unit`}
@@ -281,15 +328,25 @@ export function QuantityInput({
           if (value) onChange({ value: value.value, unit: e.target.value });
         }}
       >
-        {unitOptions.map((u) => (
-          <option key={u}>{u}</option>
+        {unitOptions.map((option) => (
+          <option key={option}>{option}</option>
         ))}
       </select>
     </div>
   );
 }
 
-export function Collapsible({ title, children, defaultOpen = false, count }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean; count?: number }) {
+export function Collapsible({
+  title,
+  children,
+  defaultOpen = false,
+  count,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  count?: number;
+}) {
   return (
     <details open={defaultOpen} className="group rounded-2xl border border-slate-200 bg-white shadow-sm [&_summary::-webkit-details-marker]:hidden">
       <summary className="flex cursor-pointer select-none items-center justify-between gap-3 p-4 sm:p-6">

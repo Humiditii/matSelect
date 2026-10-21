@@ -7,25 +7,26 @@ import { api } from '@/lib/api';
 import type { SelectionResult } from '@/lib/types';
 
 export default function ResultsPage({ params }: { params: { id: string } }) {
-  const [res, setRes] = useState<SelectionResult | null>(null);
+  const [result, setResult] = useState<SelectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    // Ignore a response that arrives after the page has moved on to another id.
+    let isCurrent = true;
     api
       .getSelection(params.id)
-      .then((r) => alive && setRes(r))
-      .catch((e: Error) => alive && setError(e.message));
+      .then((selection) => isCurrent && setResult(selection))
+      .catch((err: Error) => isCurrent && setError(err.message));
     return () => {
-      alive = false;
+      isCurrent = false;
     };
   }, [params.id]);
 
   useEffect(() => {
-    if (res) document.title = `${res.spec.title} — MatSelect`;
-  }, [res]);
+    if (result) document.title = `${result.spec.title} — MatSelect`;
+  }, [result]);
 
-  if (error)
+  if (error) {
     return (
       <div className="mx-auto max-w-xl space-y-4">
         <Banner tone="danger" title="Couldn’t load this result">
@@ -34,11 +35,13 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
         <ButtonLink href="/">Start a new selection</ButtonLink>
       </div>
     );
-  if (!res)
+  }
+  if (!result) {
     return (
       <div className="flex items-center justify-center gap-3 py-24 text-slate-500">
         <Spinner /> Loading result…
       </div>
     );
-  return <ResultsView res={res} />;
+  }
+  return <ResultsView result={result} />;
 }

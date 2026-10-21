@@ -11,11 +11,12 @@ import {
 import { LlmContextI } from 'src/common/interface/main.interface';
 import { FAMILY_LABEL } from 'src/engine/labels';
 import { LlmService } from 'src/core/llm/llm.service';
-import { mockCandidates } from 'src/core/llm/mock/mock.data';
+import { mockCandidates } from 'src/core/llm/mock/mock.candidates';
 import {
   CANDIDATE_SCHEMA,
   CandidateOutput,
   toMaterials,
+  uniqueId,
 } from 'src/core/llm/outputs/llm.outputs';
 import {
   CANDIDATE_SYSTEM,
@@ -37,9 +38,9 @@ export class MaterialService {
   }
 
   /**
-   * candidate materials for every family the user did not exclude.
-   * Claude: one parallel call per family; a failed family is skipped with a warning; all failing → 502.
-   * Demo: the built-in curated set.
+   * Candidate materials for every family the user did not exclude. With Claude there is one parallel call
+   * per family; a family that fails is skipped with a warning, and if every family fails the request fails.
+   * Without a key the built-in demo set is used.
    */
   async getCandidates(
     spec: DesignSpec,
@@ -49,10 +50,13 @@ export class MaterialService {
     const usedIds = new Set<string>();
 
     if (!this.llm.isLive(ctx)) {
-      const materials = families.flatMap((f) =>
-        mockCandidates(f, this.perFamily).map((m) => ({
-          ...m,
-          id: uniqueId(`${f}-${m.name}-${m.grade ?? ''}`, usedIds),
+      const materials = families.flatMap((family) =>
+        mockCandidates(family, this.perFamily).map((material) => ({
+          ...material,
+          id: uniqueId(
+            `${family}-${material.name}-${material.grade ?? ''}`,
+            usedIds,
+          ),
         })),
       );
       return { materials, warnings: [] };
@@ -79,24 +83,24 @@ export class MaterialService {
     const materials: Material[] = [];
     const failures: AppException[] = [];
 
-    settled.forEach((s, i) => {
+    settled.forEach((outcome, i) => {
       const family = families[i] as Family;
-      if (s.status === 'fulfilled') {
+      if (outcome.status === 'fulfilled') {
         const items = toMaterials(
-          s.value.materials,
+          outcome.value.materials,
           family,
           usedIds,
           spec.customEnvironments,
           spec.customProperties.map((p) => p.key),
         );
-        const dropped = s.value.materials.length - items.length;
+        const dropped = outcome.value.materials.length - items.length;
         if (dropped > 0)
           warnings.push(
             `Dropped ${dropped} ${FAMILY_LABEL[family].toLowerCase()} candidate(s) listed under the wrong family.`,
           );
         materials.push(...items);
       } else {
-        const err = s.reason as AppException;
+        const err = outcome.reason as AppException;
         failures.push(err);
         warnings.push(
           `Could not get ${FAMILY_LABEL[family].toLowerCase()} candidates from Claude, so that family was skipped (${err?.message ?? String(err)}).`,
@@ -105,7 +109,7 @@ export class MaterialService {
     });
 
     if (!materials.length) {
-      // A rejected user key is the user's to fix (401/403); everything else is an upstream failure (502).
+      // A rejected user key or a rate limit is passed on as is; anything else is an upstream failure (502).
       const first = failures[0];
       const status =
         typeof first?.getStatus === 'function' ? first.getStatus() : 502;
@@ -117,18 +121,4 @@ export class MaterialService {
 
     return { materials, warnings };
   }
-}
-
-function uniqueId(raw: string, used: Set<string>): string {
-  const base =
-    raw
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 60) || 'material';
-  let id = base;
-  for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
-  used.add(id);
-  return id;
 }

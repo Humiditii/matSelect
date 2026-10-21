@@ -30,12 +30,12 @@ export class SourcingController {
   async findSources(
     @Res() res: Response,
     @Param('selectionId') selectionId: string,
-    @Body() b: FindSourcesDto,
+    @Body() body: FindSourcesDto,
     @Headers(CONFIGS.USER_KEY_HEADER) userKey?: string,
   ): Promise<Response> {
     const data = await this.sourcingService.findSources(
       selectionId,
-      b,
+      body,
       this.llm.resolve(userKey),
     );
 

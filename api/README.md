@@ -110,14 +110,15 @@ api/
 │   │   │   ├── prompts/llm.prompts.ts
 │   │   │   ├── outputs/llm.outputs.ts   JSON Schemas Claude must follow + zod validators
 │   │   │   ├── interface/llm.interface.ts
-│   │   │   └── mock/                mock.data.ts (extraction, explanations, demoAdjust), mock.materials.ts
+│   │   │   └── mock/                mock.extraction.ts, mock.explanation.ts, mock.candidates.ts (demoAdjust), mock.materials.ts
 │   │   ├── spec/                    POST /specs/extract
 │   │   ├── material/                candidate materials (Claude per family, or demo)
 │   │   ├── explanation/             explanation + number check
-│   │   ├── selection/               POST/GET /selections, explain; schema, repository, grounding util
+│   │   ├── selection/               POST/GET /selections, explain; schema, repository, explanation payload + grounding utils
 │   │   └── apiKey/                  POST /api-key/verify
 │   └── engine/                      ★ pure calculations (see §8)
-│       ├── units.ts  physics.ts  validate.ts  pipeline.ts  random.ts  labels.ts  environments.ts
+│       ├── pipeline.ts  design.ts  screening.ts  evaluation.ts  monteCarlo.ts  reasons.ts  chartData.ts
+│       ├── section.ts  indices.ts  sizing.ts  properties.ts  units.ts  validate.ts  random.ts  labels.ts  environments.ts  sustainability.ts
 │       └── engine.spec.ts
 ├── test/selection.e2e-spec.ts       HTTP tests (real AppModule, throwaway Mongo DB, stubbed Claude)
 └── scripts/migrate-legacy-selections.js
@@ -274,7 +275,7 @@ Each material also carries:
 | **spec** | `spec.controller.ts`, `spec.service.ts`, `dto/spec.dto.ts`, `spec.swagger.ts` | `POST /specs/extract`: description → `{ spec, questions, dataSource }` |
 | **material** | `material.service.ts`, `interface/` | Candidates for every non-excluded family |
 | **explanation** | `explanation.service.ts` | Explanation per audience and the number check |
-| **selection** | controller, service, `dto/`, `schema/`, `repository/`, `interface/`, `util/grounding.util.ts`, swagger | Runs selections, lists and fetches them, caches explanations |
+| **selection** | controller, service, `dto/`, `schema/`, `repository/`, `interface/`, `util/explanationPayload.util.ts`, `util/grounding.util.ts`, swagger | Runs selections, lists and fetches them, caches explanations |
 | **apiKey** | controller, service, `dto/`, swagger | `POST /api-key/verify` |
 | **sourcing** | controller, service, `dto/`, swagger | `POST /selections/:id/sourcing`: where to buy the top picks in a country (live web search with Claude; guidance and search links without) |
 | **Logging** (common, global) | `logging.module.ts`, `logging.service.ts` | `AppLoggerService` (winston), injected anywhere |
@@ -304,7 +305,7 @@ For each of the 6 families not excluded, it makes one Claude call in parallel (`
 
 ### explanation — `ExplanationService.generateExplanation(result, audience, ctx)`
 
-1. Builds a compact payload (`buildPayload`): the design, requirements, top 5 with values and references, up to 8 informative rejections, warnings and safety notes.
+1. Builds a compact payload (`buildPayload` in `explanationPayload.util.ts`): the design, requirements, top 5 with values and references, up to 8 informative rejections, warnings and safety notes.
 2. Claude writes 220–420 words in the audience's style; the demo uses a template.
 3. `checkGrounding` checks the numbers (§11). If any don't match, it regenerates once, listing them, and keeps the better version.
 4. If Claude fails altogether, it returns the templated summary with a note.
@@ -345,14 +346,14 @@ An unknown unit throws `UnitError`, which becomes a 400 with the supported list.
 | `confidence: low` | Flagged |
 | Duplicate (same name and grade) | Removed |
 
-### 8.3 Design resolution — `resolveDesign` in `pipeline.ts`
+### 8.3 Design resolution — `resolveDesign` in `design.ts`
 
 - **Safety factor:** the class default (1.5, 2.5 or 3) unless overridden. A lower override triggers a warning.
 - **Mode:** `sizing` when a beam, tie, column or shaft has a load, a length and an active check. Otherwise `index`, with a warning if the user could have sized it.
 - **Index derivation:** see 8.5.
 - **Requirements in plain words:** `activeConstraints` lists what was applied, e.g. "Friction coefficient between 0.3 and 0.5 — steady braking".
 
-### 8.4 Screening — `screen()`
+### 8.4 Screening — `screenMaterial()` in `screening.ts`
 
 Each failure gives a plain-language reason, and all reasons are collected rather than stopping at the first.
 
@@ -368,7 +369,7 @@ Each failure gives a plain-language reason, and all reasons are collected rather
 | Price per kg | Low end above the limit → reject; high end above → flag |
 | Missing data the calculation needs | `notEvaluated` (never imputed) |
 
-### 8.5 Material indices — `physics.ts`
+### 8.5 Material indices — `indices.ts`
 
 An index is a product of property powers, Π propᵉ, where higher is better. For beams the exponents come from the **section scaling**: a section has area A ∝ s^pA, second moment I ∝ s^pI and section modulus Z ∝ s^pZ.
 
@@ -391,7 +392,7 @@ A solid or tube section (pA=2, pI=4, pZ=3) gives E^(1/2)/ρ and σ^(2/3)/ρ. A b
 
 For the "cheapest" goal, ρ becomes ρ·C (custom indices are divided by C). Expressions are rendered Ashby-style, e.g. `E^(1/2)/ρ` or `E/ρ·C`.
 
-### 8.6 Sizing (load-bearing parts) — `sizePart()`
+### 8.6 Sizing (load-bearing parts) — `sizePart()` in `sizing.ts`
 
 These checks run in SI units, using the **low end of the E and strength ranges** so the answer is conservative:
 
@@ -672,7 +673,7 @@ The e2e suite needs MongoDB running and drops its test database afterwards.
 |---|---|
 | Add an endpoint | Add a method to the feature's controller (use `@Res()` and return `res.status(x).json(this.success('success', x, data))`); put the work in the service; add a DTO with class-validator and `@ApiProperty`; add a `SwaggerXxx()` function in `<feature>.swagger.ts` |
 | Add a feature module | Create `core/<feature>/` with `<feature>.module.ts`, `.controller.ts`, `.service.ts`, `.swagger.ts`, `dto/`, plus `schema/` and `repository/` if it stores data (repository extends `BaseRepository`, model registered with `MongooseModule.forFeature`). Import the module in `app.module.ts` |
-| Add a field to the brief | `DesignSpecBase` in `domain.types.ts` (give it a `.default()` so old results still load) → `web/lib/types.ts` → use it in `engine/pipeline.ts` → if Claude should fill it, add it to `EXTRACTION_SCHEMA` and `ExtractionOutput` and mention it in `EXTRACTION_SYSTEM` |
+| Add a field to the brief | `DesignSpecBase` in `domain.types.ts` (give it a `.default()` so old results still load) → `web/lib/types.ts` → use it in the engine (`design.ts` / `screening.ts`) → if Claude should fill it, add it to `EXTRACTION_SCHEMA` and `ExtractionOutput` and mention it in `EXTRACTION_SYSTEM` |
 | Change a threshold | Safety factors: `DEFAULT_SAFETY_FACTORS`. Environment rules: `ENV_REQUIREMENTS`. Custom environment minimum: `CUSTOM_ENV_MIN`. Plausibility: `BOUNDS`. Close call: `CLOSE_CALL` |
 | Add a kind of part | `COMPONENTS` → its index in `deriveIndices()` → if sizable, a case in `sizePart()` → a hand-calculated test |
 | Steer Claude | Edit `prompts/llm.prompts.ts`. Any new output field also needs the JSON Schema and the zod validator in `outputs/llm.outputs.ts` |

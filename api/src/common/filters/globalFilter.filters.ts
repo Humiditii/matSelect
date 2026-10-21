@@ -33,12 +33,12 @@ export class AllGlobalExceptionsFilter implements ExceptionFilter {
     if (exception instanceof ThrottlerException) {
       message = 'Too many requests — please wait a minute and try again.';
     } else if (exception instanceof HttpException) {
-      const res: any = exception.getResponse();
+      const body: any = exception.getResponse();
       message =
-        typeof res === 'object'
-          ? res?.message || exception.message
-          : res || exception.message;
-      if (Array.isArray(res?.issues)) issues = res.issues;
+        typeof body === 'object'
+          ? body?.message || exception.message
+          : body || exception.message;
+      if (Array.isArray(body?.issues)) issues = body.issues;
     } else {
       message = exception?.message || exception?.response?.message || message;
     }

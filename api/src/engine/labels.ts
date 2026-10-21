@@ -62,7 +62,7 @@ export const RATING_FIELD_LABEL = {
   chemicals: 'chemicals',
 } as const;
 
-const SUP: Record<string, string> = {
+const SUPERSCRIPT: Record<string, string> = {
   '-': '⁻',
   '0': '⁰',
   '1': '¹',
@@ -76,26 +76,39 @@ const SUP: Record<string, string> = {
   '9': '⁹',
 };
 
-/** Rounded number for prose: 3 significant figures, thousands separators for big numbers, ×10ⁿ for tiny ones. */
-export function fmt(x: number, sig = 3): string {
+/**
+ * A number for prose: 3 significant figures, thousands separators for big
+ * numbers and "×10ⁿ" for tiny ones.
+ */
+export function formatNumber(x: number, significant = 3): string {
   if (!Number.isFinite(x)) return String(x);
   if (x === 0) return '0';
   if (Math.abs(x) < 1e-3) {
-    const [m, e] = x.toExponential(Math.max(0, sig - 2)).split('e');
-    return `${Number(m)}×10${String(Number(e)).replace(/./g, (c) => SUP[c] ?? c)}`;
+    const [mantissa, exponent] = x
+      .toExponential(Math.max(0, significant - 2))
+      .split('e');
+    const superscript = String(Number(exponent)).replace(
+      /./g,
+      (c) => SUPERSCRIPT[c] ?? c,
+    );
+    return `${Number(mantissa)}×10${superscript}`;
   }
-  const r = Number(x.toPrecision(sig));
-  if (Math.abs(r) >= 10000) return Math.round(r).toLocaleString('en-US');
-  return String(r);
+  const rounded = Number(x.toPrecision(significant));
+  if (Math.abs(rounded) >= 10000)
+    return Math.round(rounded).toLocaleString('en-US');
+  return String(rounded);
 }
 
-export function fmtUsd(x: number): string {
+export function formatUsd(x: number): string {
   if (x >= 100) return `$${Math.round(x).toLocaleString('en-US')}`;
   if (x >= 1) return `$${x.toFixed(2)}`;
   return `$${x.toPrecision(2)}`;
 }
 
-export const pct = (p: number) => `${Math.round(p * 100)}%`;
+export const formatPercent = (fraction: number) =>
+  `${Math.round(fraction * 100)}%`;
 
-export const fmtRange = (r: [number, number]) =>
-  r[0] === r[1] ? fmt(r[0]) : `${fmt(r[0])}–${fmt(r[1])}`;
+export const formatRange = (r: [number, number]) =>
+  r[0] === r[1]
+    ? formatNumber(r[0])
+    : `${formatNumber(r[0])}–${formatNumber(r[1])}`;

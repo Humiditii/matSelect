@@ -14,7 +14,7 @@ export type SelectionDocument = Selection & Document;
   minimize: false,
 })
 export class Selection {
-  // DECISION: UUID ids (not ObjectIds) keep result URLs opaque and stable.
+  // UUIDs rather than ObjectIds keep result URLs opaque and stable.
   @Prop({ type: String, default: () => randomUUID() })
   _id: string;
 

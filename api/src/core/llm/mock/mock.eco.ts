@@ -1,11 +1,12 @@
 /**
- * Demo-mode footprint, sustainability and processing data for the built-in materials.
+ * Demo footprint, sustainability and processing data for the built-in materials.
  *
- * co2 (kg CO₂e/kg) and energy (MJ/kg) are typical cradle-to-gate ranges for virgin material, in line with
+ * co2 (kg CO2e/kg) and energy (MJ/kg) are typical cradle-to-gate ranges for virgin material, in line with
  * published inventories (ICE database, Ashby's eco-data). Wood values exclude stored biogenic carbon.
- * Like all demo data, they are indicative only: verify against an EPD or LCA database for real decisions.
+ * Like all demo data they are indicative only; check an EPD or LCA database for real decisions.
  *
- * Encoding: [co2, energy, recyclability g/p/d/n, flags (r = renewable, b = biodegradable), contained raw materials, hazards, tips?]
+ * Each entry is [co2, energy, recyclability (g/p/d/n), flags (r = renewable, b = biodegradable),
+ * contained raw materials, hazards, optional processing tips].
  */
 import {
   Family,
@@ -13,18 +14,26 @@ import {
   RECYCLABILITY,
 } from 'src/common/domain/domain.types';
 
-type R = [number, number];
-type Eco = [R, R, 'g' | 'p' | 'd' | 'n', string, string[], string[], string[]?];
+type Span = [number, number];
+type EcoEntry = [
+  Span,
+  Span,
+  'g' | 'p' | 'd' | 'n',
+  string,
+  string[],
+  string[],
+  string[]?,
+];
 
-const REC: Record<string, (typeof RECYCLABILITY)[number]> = {
+const RECYCLABILITY_CODES: Record<string, (typeof RECYCLABILITY)[number]> = {
   g: 'good',
   p: 'possible',
   d: 'difficult',
   n: 'no',
 };
 
-const ECO: Record<string, Eco> = {
-  // metals
+const ECO_DATA: Record<string, EcoEntry> = {
+  // Metals
   'Mild steel, uncoated': [
     [1.6, 2.4],
     [20, 30],
@@ -148,7 +157,7 @@ const ECO: Record<string, Eco> = {
     ['Wear dust contains metals — avoid breathing it'],
     ['Bought as finished pads; not worked in a home workshop'],
   ],
-  // polymers
+  // Polymers
   'Rigid PVC (uPVC)': [
     [2.0, 2.6],
     [60, 70],
@@ -254,7 +263,7 @@ const ECO: Record<string, Eco> = {
     ['Releases formaldehyde if overheated'],
     ['Machines very well; almost impossible to glue'],
   ],
-  // ceramics & glass
+  // Ceramics & glass
   'Soda-lime float glass (annealed)': [
     [0.8, 1.3],
     [12, 16],
@@ -348,7 +357,7 @@ const ECO: Record<string, Eco> = {
     [],
     ['Order cut to size; diamond tools only'],
   ],
-  // composites
+  // Composites
   'Carbon fibre / epoxy, woven (quasi-isotropic)': [
     [30, 55],
     [500, 750],
@@ -490,7 +499,7 @@ const ECO: Record<string, Eco> = {
     [],
     ['Specialist-made parts only'],
   ],
-  // wood & natural
+  // Wood & natural
   'Pine / spruce, untreated': [
     [0.3, 0.5],
     [8, 12],
@@ -590,7 +599,7 @@ const ECO: Record<string, Eco> = {
     [],
     ['Cut with a sharp hobby knife; glue with PVA or CA'],
   ],
-  // foams & elastomers
+  // Foams & elastomers
   'Expanded polystyrene foam': [
     [3.0, 3.5],
     [85, 100],
@@ -683,7 +692,7 @@ const ECO: Record<string, Eco> = {
   ],
 };
 
-/** Default tips per family when a material has none of its own. */
+// Used when a material has no tips of its own.
 const FAMILY_TIPS: Record<Family, string[]> = {
   metal: ['Deburr every cut edge', 'Protect bare surfaces from moisture'],
   polymer: ['Use sharp tools and low speeds to avoid melting'],
@@ -695,21 +704,20 @@ const FAMILY_TIPS: Record<Family, string[]> = {
   foam_elastomer: ['Cut with a sharp knife; test adhesives first'],
 };
 
-/** Fields to merge into a demo material. */
+// The eco fields to merge into a demo material.
 export function ecoFor(name: string, family: Family): Partial<Material> {
-  const e = ECO[name];
-  if (!e) return { processingTips: FAMILY_TIPS[family] };
-  const [co2, energy, rec, flags, crit, hazards, tips] = e;
+  const entry = ECO_DATA[name];
+  if (!entry) return { processingTips: FAMILY_TIPS[family] };
+  const [co2, energy, recyclability, flags, rawMaterials, hazards, tips] =
+    entry;
   return {
     co2,
     embodiedEnergy: energy,
-    recyclability: REC[rec],
+    recyclability: RECYCLABILITY_CODES[recyclability],
     renewable: flags.includes('r'),
     biodegradable: flags.includes('b'),
-    criticalElements: crit,
+    criticalElements: rawMaterials,
     hazards,
     processingTips: tips ?? FAMILY_TIPS[family],
   };
 }
-
-export const ECO_NAMES = Object.keys(ECO);

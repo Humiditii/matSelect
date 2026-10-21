@@ -1,3 +1,4 @@
+import { AUDIENCES } from './types';
 import type {
   Audience,
   Component,
@@ -6,6 +7,7 @@ import type {
   Environment,
   Family,
   MustHave,
+  Objective,
   Process,
   ProcessRating,
   SafetyClass,
@@ -46,41 +48,41 @@ export const PROPERTY_LABEL: Record<string, { label: string; unit: string }> = {
   embodiedEnergy: { label: 'Embodied energy', unit: 'MJ/kg' },
 };
 
-export const RECYCLABILITY_STYLE: Record<string, string> = {
-  good: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  possible: 'bg-sky-50 text-sky-700 ring-sky-200',
-  difficult: 'bg-amber-50 text-amber-800 ring-amber-200',
-  no: 'bg-rose-50 text-rose-700 ring-rose-200',
-};
+// Region codes that Intl knows but that are not countries.
+const NOT_COUNTRIES = new Set([
+  'EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'ZZ', 'AQ', 'BV', 'HM', 'TF', 'UM', 'IO', 'CP', 'DG', 'EA', 'IC', 'TA', 'AC', 'XK',
+]);
 
-const NOT_COUNTRIES = new Set(['EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'ZZ', 'AQ', 'BV', 'HM', 'TF', 'UM', 'IO', 'CP', 'DG', 'EA', 'IC', 'TA', 'AC', 'XK']);
-let countryCache: { code: string; name: string }[] | null = null;
+export interface Country {
+  code: string;
+  name: string;
+}
 
-/** Every country the browser knows, sorted by name (built from Intl, no hard-coded list). */
-export function countries(): { code: string; name: string }[] {
+let countryCache: Country[] | null = null;
+
+// Built from the browser's Intl data rather than a hard-coded list.
+export function countries(): Country[] {
   if (countryCache) return countryCache;
-  const out: { code: string; name: string }[] = [];
+  const list: Country[] = [];
   try {
-    const dn = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' });
-    for (let a = 65; a <= 90; a++)
-      for (let b = 65; b <= 90; b++) {
-        const code = String.fromCharCode(a, b);
-        const name = dn.of(code);
-        // Skip retired codes (e.g. DY → BJ for Benin): keep only codes that are their own canonical form.
+    const regionNames = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' });
+    for (let first = 65; first <= 90; first++) {
+      for (let second = 65; second <= 90; second++) {
+        const code = String.fromCharCode(first, second);
+        const name = regionNames.of(code);
+        // Retired codes map to a new one (DY is now BJ for Benin), so keep only codes that are already canonical.
         const canonical = Intl.getCanonicalLocales(`und-${code}`)[0]?.split('-')[1];
-        if (name && name !== code && canonical === code && !NOT_COUNTRIES.has(code)) out.push({ code, name });
+        if (name && name !== code && canonical === code && !NOT_COUNTRIES.has(code)) list.push({ code, name });
       }
+    }
   } catch {
-    /* very old browsers: empty list, the select still works with typed codes */
+    // Very old browsers: the list stays empty.
   }
-  countryCache = out.sort((x, y) => x.name.localeCompare(y.name));
+  countryCache = list.sort((a, b) => a.name.localeCompare(b.name));
   return countryCache;
 }
 
-export const countryNameOf = (code: string | null | undefined) =>
-  (code && countries().find((c) => c.code === code)?.name) || code || '';
-
-/** Best guess of the user's country from the browser locale (e.g. "en-NG" → "NG"). */
+/** Guesses the user's country from the browser locale, e.g. "en-NG" gives "NG". */
 export function browserCountry(): string | null {
   try {
     const region = new Intl.Locale(navigator.language).maximize().region;
@@ -92,8 +94,9 @@ export function browserCountry(): string | null {
 
 /** Label and unit of a standard or custom property. */
 export function propertyInfo(spec: { customProperties?: { key: string; label: string; unit: string }[] }, key: string) {
-  const c = spec.customProperties?.find((p) => p.key === key);
-  return c ? { label: c.label, unit: c.unit } : PROPERTY_LABEL[key] ?? { label: key, unit: '' };
+  const custom = spec.customProperties?.find((property) => property.key === key);
+  if (custom) return { label: custom.label, unit: custom.unit };
+  return PROPERTY_LABEL[key] ?? { label: key, unit: '' };
 }
 
 export const SUPPORT_LABEL: Record<Support, string> = {
@@ -164,7 +167,8 @@ export const SAFETY_LABEL: Record<SafetyClass, { label: string; hint: string }> 
   lifting: { label: 'Lifting loads', hint: 'Hooks, hoists, slings' },
 };
 
-export const PROCESS_RATING_STYLE: Record<ProcessRating, string> = {
+// Shared by process ratings and recyclability, which use the same four levels.
+export const RATING_LEVEL_STYLE: Record<ProcessRating, string> = {
   good: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   possible: 'bg-sky-50 text-sky-700 ring-sky-200',
   difficult: 'bg-amber-50 text-amber-800 ring-amber-200',
@@ -184,6 +188,27 @@ export const RATING_STYLE: Record<string, string> = {
   D: 'bg-orange-100 text-orange-800',
   E: 'bg-rose-100 text-rose-800',
 };
+
+export const AUDIENCE_OPTIONS = AUDIENCES.map((audience) => ({
+  value: audience,
+  label: `${AUDIENCE_LABEL[audience].icon} ${AUDIENCE_LABEL[audience].label}`,
+  title: AUDIENCE_LABEL[audience].hint,
+}));
+
+export const GOAL_OPTIONS: { value: Objective; label: string }[] = [
+  { value: 'min_mass', label: '🪶 As light as possible' },
+  { value: 'min_cost', label: '💲 As cheap as possible' },
+  { value: 'min_carbon', label: '🌱 Lowest carbon' },
+  { value: 'balanced', label: '⚖️ Balanced' },
+];
+
+// For parts chosen by their properties, "light" and "cheap" mean best performance and best value.
+export const CUSTOM_GOAL_OPTIONS: { value: Objective; label: string }[] = [
+  { value: 'min_mass', label: '🏆 Best performance' },
+  { value: 'min_cost', label: '💲 Best value for money' },
+  { value: 'min_carbon', label: '🌱 Lowest carbon' },
+  { value: 'balanced', label: '⚖️ Balanced' },
+];
 
 export const EXAMPLES: { label: string; icon: string; text: string }[] = [
   {
@@ -223,18 +248,37 @@ export const EXAMPLES: { label: string; icon: string; text: string }[] = [
   },
 ];
 
-const SUP: Record<string, string> = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
-export const fmt = (x: number, sig = 3) => {
-  if (!Number.isFinite(x)) return '—';
-  if (x === 0) return '0';
-  if (Math.abs(x) < 1e-3) {
-    const [m, e] = x.toExponential(Math.max(0, sig - 2)).split('e');
-    return `${Number(m)}×10${String(Number(e)).replace(/./g, (c) => SUP[c] ?? c)}`;
-  }
-  const r = Number(x.toPrecision(sig));
-  return Math.abs(r) >= 10000 ? Math.round(r).toLocaleString('en-US') : String(r);
+const SUPERSCRIPT_DIGITS: Record<string, string> = {
+  '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
 };
-export const fmtUsd = (x: number) => (x >= 100 ? `$${Math.round(x).toLocaleString('en-US')}` : x >= 1 ? `$${x.toFixed(2)}` : `$${x.toPrecision(2)}`);
-export const fmtRange = (r: [number, number] | null, sig = 3) => (r ? (r[0] === r[1] ? fmt(r[0], sig) : `${fmt(r[0], sig)}–${fmt(r[1], sig)}`) : '—');
-export const pct = (p: number) => `${Math.round(p * 100)}%`;
-export const materialName = (m: { name: string; grade: string | null }) => (m.grade ? `${m.name} (${m.grade})` : m.name);
+
+/** Rounds to `significantDigits` and writes very small numbers as 1.2×10⁻⁵. */
+export function formatNumber(value: number, significantDigits = 3): string {
+  if (!Number.isFinite(value)) return '—';
+  if (value === 0) return '0';
+  if (Math.abs(value) < 1e-3) {
+    const [mantissa, exponent] = value.toExponential(Math.max(0, significantDigits - 2)).split('e');
+    const superscript = String(Number(exponent)).replace(/./g, (char) => SUPERSCRIPT_DIGITS[char] ?? char);
+    return `${Number(mantissa)}×10${superscript}`;
+  }
+  const rounded = Number(value.toPrecision(significantDigits));
+  return Math.abs(rounded) >= 10000 ? Math.round(rounded).toLocaleString('en-US') : String(rounded);
+}
+
+export function formatUsd(value: number): string {
+  if (value >= 100) return `$${Math.round(value).toLocaleString('en-US')}`;
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  return `$${value.toPrecision(2)}`;
+}
+
+export function formatRange(range: [number, number] | null, significantDigits = 3): string {
+  if (!range) return '—';
+  const [low, high] = range;
+  if (low === high) return formatNumber(low, significantDigits);
+  return `${formatNumber(low, significantDigits)}–${formatNumber(high, significantDigits)}`;
+}
+
+export const formatPercent = (fraction: number) => `${Math.round(fraction * 100)}%`;
+
+export const materialName = (material: { name: string; grade: string | null }) =>
+  material.grade ? `${material.name} (${material.grade})` : material.name;

@@ -1,7 +1,5 @@
-/**
- * Plausibility checks on AI-supplied material data
- * Out-of-bounds data is never "fixed": the material goes to invalidData.
- */
+// Plausibility checks on material data supplied by the AI. Out-of-bounds data
+// is never "fixed": the material goes to invalidData instead.
 import {
   ExcludedMaterial,
   Material,
@@ -11,8 +9,8 @@ import {
   Range,
 } from 'src/common/domain/domain.types';
 
-/** Physical bounds per property */
-export const BOUNDS: Record<PropertyKey, [number, number]> = {
+/** Physically plausible [min, max] per property, in its stored unit. */
+const BOUNDS: Record<PropertyKey, [number, number]> = {
   density: [1, 25_000],
   E: [1e-5, 1300],
   G: [1e-6, 1300],
@@ -27,7 +25,7 @@ export const BOUNDS: Record<PropertyKey, [number, number]> = {
   embodiedEnergy: [0.01, 100_000],
 };
 
-/** Properties where max/min is meaningful (strictly positive quantities). */
+// Strictly positive properties, where the max / min ratio is meaningful.
 const RATIO_CHECKED: PropertyKey[] = [
   'density',
   'E',
@@ -39,17 +37,17 @@ const RATIO_CHECKED: PropertyKey[] = [
   'co2',
   'embodiedEnergy',
 ];
-export const WIDE_RANGE_RATIO = 30;
+const WIDE_RANGE_RATIO = 30;
 
 export interface ValidationOutcome {
   valid: Material[];
   invalid: ExcludedMaterial[];
-  /** Data flags per material id (reordered ranges, wide ranges, low confidence, …). */
+  /** Data warnings per material id: reordered ranges, wide ranges, low confidence. */
   flags: Map<string, string[]>;
   duplicatesRemoved: string[];
 }
 
-const fmt = (x: number) =>
+const formatValue = (x: number) =>
   Math.abs(x) >= 1000 || Math.abs(x) < 0.01
     ? x.toPrecision(3)
     : String(+x.toPrecision(3));
@@ -60,6 +58,14 @@ export function validateMaterials(input: Material[]): ValidationOutcome {
   const flags = new Map<string, string[]>();
   const duplicatesRemoved: string[] = [];
   const seen = new Set<string>();
+  const reject = (material: Material, reasons: string[]) =>
+    invalid.push({
+      materialId: material.id,
+      name: material.name,
+      family: material.family,
+      grade: material.grade,
+      reasons,
+    });
 
   for (const original of input) {
     const key = `${original.name.trim().toLowerCase()}|${(original.grade ?? '').trim().toLowerCase()}`;
@@ -71,99 +77,95 @@ export function validateMaterials(input: Material[]): ValidationOutcome {
     }
     seen.add(key);
 
-    const m: Material = { ...original };
-    const f: string[] = [];
+    const material: Material = { ...original };
+    const warnings: string[] = [];
     const problems: string[] = [];
 
-    for (const k of PROPERTY_KEYS) {
-      const r = m[k];
-      if (r === null) continue;
-      let [lo, hi] = r;
-      const meta = PROPERTY_META[k];
-      if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    for (const key of PROPERTY_KEYS) {
+      const range = material[key];
+      if (range === null) continue;
+      let [low, high] = range;
+      const meta = PROPERTY_META[key];
+      if (!Number.isFinite(low) || !Number.isFinite(high)) {
         problems.push(`${meta.label} is not a number`);
         continue;
       }
-      if (lo > hi) {
-        [lo, hi] = [hi, lo];
-        f.push(
+      if (low > high) {
+        [low, high] = [high, low];
+        warnings.push(
           `${meta.label} range was reversed in the AI data and has been reordered`,
         );
       }
-      const [bLo, bHi] = BOUNDS[k];
-      if (lo < bLo || hi > bHi) {
+      const [minPlausible, maxPlausible] = BOUNDS[key];
+      if (low < minPlausible || high > maxPlausible) {
         problems.push(
-          `${meta.label} ${fmt(lo)}–${fmt(hi)} ${meta.unit} is outside the physically plausible ${fmt(bLo)}–${fmt(bHi)} ${meta.unit}`,
+          `${meta.label} ${formatValue(low)}–${formatValue(high)} ${meta.unit} is outside the physically plausible ${formatValue(minPlausible)}–${formatValue(maxPlausible)} ${meta.unit}`,
         );
         continue;
       }
-      if (RATIO_CHECKED.includes(k) && lo > 0 && hi / lo > WIDE_RANGE_RATIO) {
-        f.push(
-          `${meta.label} range is very wide (${fmt(lo)}–${fmt(hi)} ${meta.unit}), so results for it are uncertain`,
+      if (
+        RATIO_CHECKED.includes(key) &&
+        low > 0 &&
+        high / low > WIDE_RANGE_RATIO
+      ) {
+        warnings.push(
+          `${meta.label} range is very wide (${formatValue(low)}–${formatValue(high)} ${meta.unit}), so results for it are uncertain`,
         );
       }
-      m[k] = [lo, hi] as Range;
+      material[key] = [low, high] as Range;
     }
 
+    // Custom properties have no known bounds, so only order and width are checked.
     const extra: Record<string, Range | null> = {};
-    for (const [k, r] of Object.entries(m.extra ?? {})) {
-      if (r === null) {
-        extra[k] = null;
+    for (const [key, range] of Object.entries(material.extra ?? {})) {
+      if (range === null) {
+        extra[key] = null;
         continue;
       }
-      let [lo, hi] = r;
-      if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
-        problems.push(`${k} is not a number`);
+      let [low, high] = range;
+      if (!Number.isFinite(low) || !Number.isFinite(high)) {
+        problems.push(`${key} is not a number`);
         continue;
       }
-      if (lo > hi) {
-        [lo, hi] = [hi, lo];
-        f.push(`${k} range was reversed in the AI data and has been reordered`);
-      }
-      if (lo > 0 && hi / lo > WIDE_RANGE_RATIO)
-        f.push(
-          `${k} range is very wide (${fmt(lo)}–${fmt(hi)}), so results for it are uncertain`,
+      if (low > high) {
+        [low, high] = [high, low];
+        warnings.push(
+          `${key} range was reversed in the AI data and has been reordered`,
         );
-      extra[k] = [lo, hi];
+      }
+      if (low > 0 && high / low > WIDE_RANGE_RATIO)
+        warnings.push(
+          `${key} range is very wide (${formatValue(low)}–${formatValue(high)}), so results for it are uncertain`,
+        );
+      extra[key] = [low, high];
     }
-    m.extra = extra;
+    material.extra = extra;
 
     if (problems.length) {
-      invalid.push({
-        materialId: m.id,
-        name: m.name,
-        family: m.family,
-        grade: m.grade,
-        reasons: problems,
-      });
+      reject(material, problems);
       continue;
     }
 
-    if (m.G && m.E && (m.G[1] > m.E[1] || m.G[0] > m.E[0])) {
-      f.push(
+    const { E, G, tMin, tMax } = material;
+    if (G && E && (G[1] > E[1] || G[0] > E[0])) {
+      warnings.push(
         'Shear modulus G was larger than E (physically impossible) and was discarded',
       );
-      m.G = null;
+      material.G = null;
     }
-    if (m.tMin && m.tMax && m.tMin[0] > m.tMax[1]) {
-      invalid.push({
-        materialId: m.id,
-        name: m.name,
-        family: m.family,
-        grade: m.grade,
-        reasons: [
-          'Minimum service temperature is above the maximum service temperature',
-        ],
-      });
+    if (tMin && tMax && tMin[0] > tMax[1]) {
+      reject(material, [
+        'Minimum service temperature is above the maximum service temperature',
+      ]);
       continue;
     }
-    if (m.confidence === 'low')
-      f.push(
+    if (material.confidence === 'low')
+      warnings.push(
         'AI confidence in this data is low — verify with a supplier datasheet',
       );
 
-    flags.set(m.id, f);
-    valid.push(m);
+    flags.set(material.id, warnings);
+    valid.push(material);
   }
   return { valid, invalid, flags, duplicatesRemoved };
 }

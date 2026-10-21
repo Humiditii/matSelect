@@ -21,11 +21,11 @@ export class SpecController {
   @HttpCode(200)
   async extractSpec(
     @Res() res: Response,
-    @Body() b: ExtractSpecDto,
+    @Body() body: ExtractSpecDto,
     @Headers(CONFIGS.USER_KEY_HEADER) userKey?: string,
   ): Promise<Response> {
     const data = await this.specService.extractSpec(
-      b,
+      body,
       this.llm.resolve(userKey),
     );
 

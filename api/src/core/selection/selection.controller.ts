@@ -35,11 +35,11 @@ export class SelectionController {
   @Post()
   async createSelection(
     @Res() res: Response,
-    @Body() b: CreateSelectionDto,
+    @Body() body: CreateSelectionDto,
     @Headers(CONFIGS.USER_KEY_HEADER) userKey?: string,
   ): Promise<Response> {
     const data = await this.selectionService.createSelection(
-      b.spec,
+      body.spec,
       this.llm.resolve(userKey),
     );
 
@@ -73,12 +73,12 @@ export class SelectionController {
   async explainSelection(
     @Res() res: Response,
     @Param('selectionId') selectionId: string,
-    @Body() b: ExplainSelectionDto,
+    @Body() body: ExplainSelectionDto,
     @Headers(CONFIGS.USER_KEY_HEADER) userKey?: string,
   ): Promise<Response> {
     const data = await this.selectionService.explainSelection(
       selectionId,
-      b.audience,
+      body.audience,
       this.llm.resolve(userKey),
     );
 

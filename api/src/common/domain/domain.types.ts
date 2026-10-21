@@ -1,13 +1,9 @@
 /**
- * Domain model: zod schemas + inferred TypeScript types.
- * Single source of truth for request validation, Claude output validation and engine I/O.
- * `web/lib/types.ts` mirrors the exported types.
+ * Domain model: zod schemas and the TypeScript types inferred from them. Used to validate requests and
+ * Claude's output, and as the engine's input and output types. `web/lib/types.ts` mirrors these types.
  */
 import { z } from 'zod';
 
-// ---------------------------------------------------------------------------
-// 5.1 Enumerations
-// ---------------------------------------------------------------------------
 export const AUDIENCES = ['craftsman', 'everyday', 'engineer'] as const;
 export const COMPONENTS = [
   'beam',
@@ -130,26 +126,24 @@ export type Rating = z.infer<typeof Rating>;
 export type ProcessRating = z.infer<typeof ProcessRating>;
 export type Confidence = z.infer<typeof Confidence>;
 
-// ---------------------------------------------------------------------------
-// 5.2 DesignSpec
-// ---------------------------------------------------------------------------
+// Design spec (the brief)
 const finite = z.number().finite();
 
-/** A quantity in the user's own unit. Units are checked by the engine (unknown unit → 400). */
+// A quantity in the user's own unit. The engine checks the unit; an unknown one is a 400.
 export const Quantity = z.object({
   value: finite.positive('must be greater than zero'),
   unit: z.string().trim().min(1).max(12),
 });
 export type Quantity = z.infer<typeof Quantity>;
 
-/** Key used to match a custom environment to its per-material rating. */
+// Key used to match a custom environment to its per-material rating.
 export const normEnv = (s: string) =>
   s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 const uniq = <T extends z.ZodTypeAny>(item: T) =>
   z.array(item).transform((xs) => Array.from(new Set(xs)) as z.infer<T>[]);
 
-/** An application-specific property the standard set doesn't cover (e.g. friction coefficient, hardness). */
+// An application-specific property the standard set doesn't cover (e.g. friction coefficient, hardness).
 export const CustomProperty = z.object({
   key: z
     .string()
@@ -164,7 +158,7 @@ export const CustomProperty = z.object({
 });
 export type CustomProperty = z.infer<typeof CustomProperty>;
 
-/** A requirement on one material property, in that property's unit. */
+// A requirement on one material property, in that property's unit.
 export const PropertyLimit = z
   .object({
     property: z.string().min(1).max(40),
@@ -182,7 +176,7 @@ export const PropertyLimit = z
   );
 export type PropertyLimit = z.infer<typeof PropertyLimit>;
 
-/** What to maximise for a general part: a product of property powers (an Ashby-style material index). */
+// What to maximise for a general part: a product of property powers (an Ashby-style material index).
 export const CustomObjective = z.object({
   description: z.string().trim().min(1).max(200),
   terms: z
@@ -269,10 +263,8 @@ const DesignSpecBase = z.object({
   customProperties: z.array(CustomProperty).max(4).default([]),
   propertyLimits: z.array(PropertyLimit).max(8).default([]),
   customObjective: CustomObjective.nullable().default(null),
-  /**
-   * Exchange constants for the "balanced" goal (Ashby's penalty function Z = C + α_m·m + α_CO₂·CO₂):
-   * what saving 1 kg of the part, and avoiding 1 kg of CO₂e, are worth in USD.
-   */
+  // Exchange constants for the "balanced" goal, Ashby's penalty function Z = C + alphaMass * m + alphaCo2 * CO2:
+  // what saving 1 kg of the part, and avoiding 1 kg of CO2e, are worth in USD.
   penalty: z
     .object({
       alphaMass: finite.min(0).max(1_000_000),
@@ -308,10 +300,8 @@ export const DesignSpec = DesignSpecBase.superRefine((s, ctx) => {
 export type DesignSpec = z.infer<typeof DesignSpec>;
 export type DesignSpecInput = z.input<typeof DesignSpec>;
 
-// ---------------------------------------------------------------------------
-// 5.3 Material
-// ---------------------------------------------------------------------------
-/** [min, max] range; a null property means "unknown". */
+// Materials
+// A [min, max] range. A null property means "unknown".
 export const Range = z.tuple([finite, finite]);
 export type Range = [number, number];
 
@@ -379,13 +369,13 @@ export const Material = z.object({
   transparent: z.boolean(),
   electricalInsulator: z.boolean(),
   ratings: RatingsSchema,
-  /** Suitability per custom environment, keyed by normEnv(text). Missing → unknown. */
+  /** Suitability per custom environment, keyed by normEnv(text). A missing key means unknown. */
   customRatings: z.record(z.string(), Rating.nullable()).default({}),
   processes: z.record(Process, ProcessRating).default({}),
   forms: z.array(z.string().max(80)).default([]),
   /** Values of the design's custom properties, keyed by CustomProperty.key. */
   extra: z.record(z.string(), Range.nullable()).default({}),
-  /** References the values typically come from (AI-recalled — to verify). */
+  /** References the values typically come from. Recalled by the AI, so they need checking. */
   sources: z.array(z.string().max(240)).max(6).default([]),
   // Sustainability and processing (null / empty = unknown).
   recyclability: z.enum(RECYCLABILITY).nullable().default(null),
@@ -400,9 +390,7 @@ export const Material = z.object({
 });
 export type Material = z.infer<typeof Material>;
 
-// ---------------------------------------------------------------------------
 // Extraction
-// ---------------------------------------------------------------------------
 export const QuestionOption = z.object({
   label: z.string().min(1).max(120),
   value: z.unknown(),
@@ -431,9 +419,7 @@ export interface ExtractResponse {
   dataSource: DataSource;
 }
 
-// ---------------------------------------------------------------------------
-// 5.4 SelectionResult
-// ---------------------------------------------------------------------------
+// Selection result
 export type DataSource = 'llm' | 'mock';
 export type Mode = 'sizing' | 'index';
 

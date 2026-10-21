@@ -9,13 +9,13 @@ This is a practical map for modifying the app. For running it, see [README.md](R
 ```
 web/app/page.tsx                    api/src/core/…
  "Continue"  ── POST /api/specs/extract ──▶ spec/spec.service.ts  extractSpec()
-                                            ├─ demo:   llm/mock/mock.data.ts  mockExtract()   (keyword rules)
+                                            ├─ demo:   llm/mock/mock.extraction.ts  mockExtract()   (keyword rules)
                                             └─ Claude: llm/prompts/llm.prompts.ts EXTRACTION_SYSTEM (+ llm/outputs/llm.outputs.ts)
  Brief (components/BriefEditor.tsx) — the user corrects it
  "Find materials" ── POST /api/selections ─▶ selection/selection.service.ts  createSelection()
                                             1. candidates  material/material.service.ts (Claude per family, or llm/mock/mock.materials.ts)
                                             2. engine      src/engine/pipeline.ts runSelection()   ← all the maths
-                                            3. explanation explanation/explanation.service.ts + selection/util/grounding.util.ts
+                                            3. explanation explanation/explanation.service.ts + selection/util/explanationPayload.util.ts + grounding.util.ts
                                             4. save        selection/repository (Mongoose → collection material_selections)
  Results page (components/ResultsView.tsx) ◀── GET /api/selections/:id
  Audience toggle ── POST /api/selections/:id/explain (cached per audience)
@@ -28,7 +28,7 @@ Every request that may call Claude carries the user's own key in the `x-anthropi
 
 | Mode | When | Requirements | Materials | Explanation |
 |---|---|---|---|---|
-| **Demo** | no server key and no user key | Keyword rules in `api/src/core/llm/mock/mock.data.ts` | 67 curated materials in `api/src/core/llm/mock/mock.materials.ts` | Template in `mock.data.ts` |
+| **Demo** | no server key and no user key | Keyword rules in `api/src/core/llm/mock/mock.extraction.ts` | 67 curated materials in `api/src/core/llm/mock/mock.materials.ts` | Template in `mock.explanation.ts` |
 | **Claude** | server key in `api/.env`, or the user's own key from the web app | Claude reads your text | Claude lists 10 per family with property ranges and references | Claude writes it; code checks every number |
 
 In **both** modes the ranking, sizes, masses, costs, probabilities and "why not" reasons are calculated by `api/src/engine/` — never by the AI. The badge in the top-right corner shows which mode is on.
@@ -50,7 +50,10 @@ web/
   app/results/[id]/page.tsx  results
   app/tutorial/page.tsx    the tutorial
   components/              BriefEditor, SpecEditor (fine-tune), ResultsView, ApiKeyDialog, StatusPill, ui
-  lib/                     api.ts (fetch + envelope), apiKey.ts (browser key storage), types.ts ★ (mirror of
+    home/                  pieces of the home page (progress, questions, recent selections)
+    results/               pieces of the results page (pick cards, explanation, tables)
+    charts/                ranking and trade-off charts
+  lib/                     spec.ts (brief defaults and checks), api.ts (fetch + envelope), apiKey.ts (browser key storage), types.ts ★ (mirror of
                            domain.types.ts), labels.ts ★ (all wording)
 ```
 
@@ -75,7 +78,7 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
 
 ### Change safety factors or durability thresholds
 - Safety factors: `DEFAULT_SAFETY_FACTORS` in `api/src/common/domain/domain.types.ts` (and the copy in `web/lib/types.ts`).
-- What each environment requires: `ENV_REQUIREMENTS` in `api/src/engine/pipeline.ts`.
+- What each environment requires: `ENV_REQUIREMENTS` in `api/src/engine/screening.ts`.
 - Minimum rating for user-typed environments: `CUSTOM_ENV_MIN` in the same file.
 - Plausibility bounds: `BOUNDS` in `api/src/engine/validate.ts`.
 - Monte Carlo samples: `MC_SAMPLES` in `api/.env`.
@@ -88,7 +91,7 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
 
 ### Add a new built-in environment (e.g. "freezer")
 1. `ENVIRONMENTS` in `api/src/common/domain/domain.types.ts` and `web/lib/types.ts`.
-2. Its requirement in `ENV_REQUIREMENTS` (`engine/pipeline.ts`) — reuse a rating field or add one to `RatingsSchema` (then also to `CANDIDATE_SCHEMA` and every demo material).
+2. Its requirement in `ENV_REQUIREMENTS` (`engine/screening.ts`) — reuse a rating field or add one to `RatingsSchema` (then also to `CANDIDATE_SCHEMA` and every demo material).
 3. Labels: `ENV_LABEL` in `api/src/engine/labels.ts` and `web/lib/labels.ts`.
 4. Optional: keyword in `engine/environments.ts` (demo mapping) and in `mockExtract` (`mock.ts`).
 (Users can already type any environment they like — see section 5.)
@@ -98,7 +101,7 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
 
 ### Add a new kind of part (component)
 1. `COMPONENTS` in both `types.ts`.
-2. Its index in `deriveIndices()` (`engine/physics.ts`); if it can be sized, a case in `sizePart()` and `SIZING_COMPONENTS` in `pipeline.ts`.
+2. Its index in `deriveIndices()` (`engine/indices.ts`); if it can be sized, a case in `sizePart()` (`engine/sizing.ts`) and `SIZING_COMPONENTS` in `engine/design.ts`.
 3. `COMPONENT_LABEL` in `web/lib/labels.ts`.
 4. A unit test in `engine/engine.spec.ts` with a hand-calculated answer.
 
@@ -106,7 +109,7 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
 1. `DesignSpec` in `api/src/common/domain/domain.types.ts` (give it a `.default(...)` so old saved results still load).
 2. `DesignSpec` in `web/lib/types.ts`.
 3. A control in `web/components/SpecEditor.tsx`.
-4. Use it in `engine/pipeline.ts` (screening or sizing) and, if Claude should fill it, in `EXTRACTION_SCHEMA` + `ExtractionOutput` + the prompt.
+4. Use it in the engine (`engine/screening.ts` or `engine/design.ts`) and, if Claude should fill it, in `EXTRACTION_SCHEMA` + `ExtractionOutput` + the prompt.
 
 ## 5. General parts and the short brief
 
@@ -118,16 +121,16 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
   - `customObjective` — the index to maximise, as property powers, e.g. `[{ property: 'wear_rate', exponent: -1 }]`.
 - The confirm page is `web/components/BriefEditor.tsx`; the full form (`SpecEditor.tsx`) is folded under "Fine-tune every detail".
 - "Anything else?" re-runs extraction on the description plus the new sentence (`refine()` in `web/app/page.tsx`).
-- **Demo profiles** live in `mockExtract()` (`api/src/core/llm/mock/mock.data.ts`): brake pad, heat sink, and a generic "what matters most?" question for anything unknown. To add one, add a `Kind`, a keyword in `kindOf()` and a `case` that sets `function`, `propertyLimits` and `customObjective`. If it needs a custom property, give some demo materials values for it via the last argument of `m()` in `mock.materials.ts` (see the friction materials); otherwise demo mode drops that requirement and says so (`demoAdjust()`).
+- **Demo profiles** live in `mockExtract()` (`api/src/core/llm/mock/mock.extraction.ts`): brake pad, heat sink, and a generic "what matters most?" question for anything unknown. To add one, add a `PartKind`, a keyword in `partKindOf()` and a `case` that sets `function`, `propertyLimits` and `customObjective`. If it needs a custom property, give some demo materials values for it via the last argument of `demoMaterial()` in `mock.materials.ts` (see the friction materials); otherwise demo mode drops that requirement and says so (`demoAdjust()`).
 - With Claude, the extraction prompt (`EXTRACTION_SYSTEM` in `prompts.ts`) does this translation for any part; edit its examples to steer it.
 
 ## 6. Footprint, sustainability, processing and sourcing
 
 - Per-material data: `co2`, `embodiedEnergy`, `recyclability`, `renewable`, `biodegradable`, `criticalElements`, `hazards`, `processingTips` on `Material` (`common/domain/domain.types.ts`). Claude supplies them (`CANDIDATE_SCHEMA` + `CANDIDATE_SYSTEM`); demo values are in `core/llm/mock/mock.eco.ts`.
-- Calculation and flags: `engine/sustainability.ts` (EU critical raw materials list, processability) and `pipeline.ts` (footprint, "lowest carbon" goal, recyclable/renewable must-haves).
+- Calculation and flags: `engine/sustainability.ts` (EU critical raw materials list, processability) `chartData.ts` (footprint), `evaluation.ts` ("lowest carbon" goal) and `screening.ts` (recyclable/renewable must-haves).
 - Where to buy: `core/sourcing/` (API) and `web/components/WhereToBuy.tsx`. To change how suppliers are searched, edit the prompt in `sourcing.service.ts`; the number of searches is the `15` passed to `searchWeb`.
-- **Balanced goal (penalty function):** `DEFAULT_ALPHA`, `penaltyPerKg()`, `penaltyOf()` and `tradeoffOf()` in `engine/pipeline.ts`; the brief's α inputs and presets in `web/components/PenaltyEditor.tsx`; Claude's suggested values come from the `objective` rules in `EXTRACTION_SYSTEM`.
-- **Charts:** `web/components/Charts.tsx` — `RankingChart` (bars + p10–p90 whiskers, top 12) and `TradeoffChart` (log–log mass vs cost/carbon, Pareto front, equal-penalty lines, table view). Plain SVG, no chart library; colours are the constants at the top of the file.
+- **Balanced goal (penalty function):** `DEFAULT_ALPHA` in `engine/design.ts`, `penaltyPerKg()` in `engine/evaluation.ts`, `penaltyOf()` and `tradeoffOf()` in `engine/chartData.ts`; the brief's α inputs and presets in `web/components/PenaltyEditor.tsx`; Claude's suggested values come from the `objective` rules in `EXTRACTION_SYSTEM`.
+- **Charts:** `web/components/charts/` — `RankingChart.tsx` (bars + p10–p90 whiskers, top 12), `TradeoffChart.tsx` (log–log mass vs cost/carbon, Pareto front, equal-penalty lines, table view) and `ChartsCard.tsx` (the tabs). Plain SVG, no chart library; colours, ticks and the tooltip are in `chartHelpers.tsx`.
 - Country: `DesignSpec.country` (two-letter code). Set from the description ("I'm in Lagos") or the brief's country picker. Claude then prefers locally obtainable materials.
 
 ## 7. Custom environments (typed by the user)

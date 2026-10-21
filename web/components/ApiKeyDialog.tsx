@@ -8,28 +8,37 @@ import { clearUserKey, getUserKey, isKeyRemembered, maskKey, setUserKey } from '
 import { Banner, Button, cx, inputClass } from './ui';
 
 /**
- * Lets a user run MatSelect with their own Claude API key when the server has none.
- * The key is checked with a free call, then kept only in this browser.
+ * Lets the user run MatSelect with their own Claude API key when the server has none.
+ * The server checks the key with a free call, then it is kept only in this browser.
  */
-export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; onClose: () => void; serverHasKey: boolean }) {
+export function ApiKeyDialog({
+  open,
+  onClose,
+  serverHasKey,
+}: {
+  open: boolean;
+  onClose: () => void;
+  serverHasKey: boolean;
+}) {
   const [value, setValue] = useState('');
-  const [show, setShow] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [current, setCurrent] = useState<string | null>(null);
+  const [checkResult, setCheckResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    setCurrent(getUserKey());
+    setSavedKey(getUserKey());
     setRemember(isKeyRemembered());
     setValue('');
-    setResult(null);
+    setCheckResult(null);
+    // Wait for the dialog to be in the DOM before focusing the input.
     setTimeout(() => inputRef.current?.focus(), 50);
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
   }, [open, onClose]);
 
   if (!open) return null;
@@ -38,23 +47,24 @@ export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; o
     const key = value.trim();
     if (!key) return;
     setBusy(true);
-    setResult(null);
+    setCheckResult(null);
     try {
-      const r = await api.verifyKey(key);
-      setResult({ ok: r.valid, message: r.message });
-      if (r.valid) {
+      const verification = await api.verifyKey(key);
+      setCheckResult({ ok: verification.valid, message: verification.message });
+      if (verification.valid) {
         setUserKey(key, remember);
-        setCurrent(key);
+        setSavedKey(key);
         setValue('');
       }
-    } catch (e) {
-      setResult({ ok: false, message: (e as Error).message });
+    } catch (err) {
+      setCheckResult({ ok: false, message: (err as Error).message });
     } finally {
       setBusy(false);
     }
   };
 
-  // Portal to <body>: the sticky header uses backdrop-filter, which would otherwise trap this fixed overlay inside it.
+  // Rendered into <body> because the sticky header uses backdrop-filter, which would otherwise
+  // trap this fixed overlay inside the header.
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 backdrop-blur-sm sm:items-center" onClick={onClose}>
       <div
@@ -86,10 +96,10 @@ export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; o
           </div>
         )}
 
-        {current && (
+        {savedKey && (
           <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900 ring-1 ring-emerald-200">
             <span>
-              ✓ Using your key <code className="text-xs">{maskKey(current)}</code>
+              ✓ Using your key <code className="text-xs">{maskKey(savedKey)}</code>
               <span className="block text-xs text-emerald-700">{isKeyRemembered() ? 'Remembered on this device' : 'Forgotten when you close this tab'}</span>
             </span>
             <Button
@@ -97,8 +107,8 @@ export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; o
               size="sm"
               onClick={() => {
                 clearUserKey();
-                setCurrent(null);
-                setResult(null);
+                setSavedKey(null);
+                setCheckResult(null);
               }}
             >
               Remove
@@ -108,11 +118,11 @@ export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; o
 
         <div className="mt-4 space-y-3">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">{current ? 'Replace with a new key' : 'Your API key'}</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">{savedKey ? 'Replace with a new key' : 'Your API key'}</span>
             <div className="flex gap-2">
               <input
                 ref={inputRef}
-                type={show ? 'text' : 'password'}
+                type={showKey ? 'text' : 'password'}
                 autoComplete="off"
                 spellCheck={false}
                 className={cx(inputClass, 'font-mono')}
@@ -121,19 +131,24 @@ export function ApiKeyDialog({ open, onClose, serverHasKey }: { open: boolean; o
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && save()}
               />
-              <Button variant="secondary" onClick={() => setShow((s) => !s)} title={show ? 'Hide key' : 'Show key'}>
-                {show ? '🙈' : '👁️'}
+              <Button variant="secondary" onClick={() => setShowKey((shown) => !shown)} title={showKey ? 'Hide key' : 'Show key'}>
+                {showKey ? '🙈' : '👁️'}
               </Button>
             </div>
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-brand-600" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-brand-600"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
             Remember on this device
           </label>
 
-          {result && (
-            <Banner tone={result.ok ? 'success' : 'danger'}>
-              <p>{result.ok ? `Saved. ${result.message}` : result.message}</p>
+          {checkResult && (
+            <Banner tone={checkResult.ok ? 'success' : 'danger'}>
+              <p>{checkResult.ok ? `Saved. ${checkResult.message}` : checkResult.message}</p>
             </Banner>
           )}
 

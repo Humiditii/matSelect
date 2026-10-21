@@ -13,16 +13,24 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Calls the API. Successful responses come wrapped as { message, status, statusCode, data } and are unwrapped;
- * errors come as { message, error, issues?, path, timestamp }.
- * `withKey` attaches the user's own Claude key (only used by the server when it has no key of its own).
- */
+const STATUS_MESSAGES: Record<number, string> = {
+  502: 'The AI service had a problem. Please try again in a moment.',
+  429: 'Too many requests — please wait a minute and try again.',
+};
+
+function errorMessage(body: { message?: unknown } | null, status: number): string {
+  if (typeof body?.message === 'string') return body.message;
+  if (Array.isArray(body?.message)) return body.message.join('; ');
+  return STATUS_MESSAGES[status] ?? `The server answered with an error (${status}).`;
+}
+
+// Successful responses are wrapped as { message, status, statusCode, data }, so we return `data`.
+// `withKey` sends the user's own Claude key, which the server only uses when it has none of its own.
 async function request<T>(path: string, init?: RequestInit & { withKey?: boolean }): Promise<T> {
   const userKey = init?.withKey ? getUserKey() : null;
-  let res: Response;
+  let response: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${API_URL}${path}`, {
       ...init,
       headers: {
         'content-type': 'application/json',
@@ -34,20 +42,16 @@ async function request<T>(path: string, init?: RequestInit & { withKey?: boolean
   } catch {
     throw new ApiError(`Cannot reach the MatSelect API at ${API_URL}. Is the backend running?`, 0);
   }
-  const body = await res.json().catch(() => null);
-  if (!res.ok) {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
     const issues = Array.isArray(body?.issues) ? body.issues : [];
-    const fallback =
-      res.status === 502
-        ? 'The AI service had a problem. Please try again in a moment.'
-        : res.status === 429
-          ? 'Too many requests — please wait a minute and try again.'
-          : `The server answered with an error (${res.status}).`;
-    const message = typeof body?.message === 'string' ? body.message : Array.isArray(body?.message) ? body.message.join('; ') : fallback;
-    throw new ApiError(message, res.status, issues);
+    throw new ApiError(errorMessage(body, response.status), response.status, issues);
   }
   return (body && typeof body === 'object' && 'data' in body ? body.data : body) as T;
 }
+
+// True when the server rejected the user's own Claude key.
+export const isKeyRejected = (error: { status?: number }) => error.status === 401 || error.status === 403;
 
 export const api = {
   health: () => request<Health>('/health'),

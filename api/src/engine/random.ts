@@ -21,6 +21,7 @@ export function hash32(text: string): number {
   return h >>> 0;
 }
 
+/** Small seeded random number generator returning values in [0, 1). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -32,15 +33,18 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/**
- * Draw from a property range. Strictly positive ranges are sampled log-uniformly
- * (material properties vary multiplicatively); ranges touching zero or negative fall back to uniform.
- */
-export function sampleRange(rng: () => number, lo: number, hi: number): number {
-  if (hi <= lo) return lo;
+// Material properties vary multiplicatively, so strictly positive ranges are
+// sampled log-uniformly. Ranges that touch zero or go negative are sampled uniformly.
+export function sampleRange(
+  rng: () => number,
+  low: number,
+  high: number,
+): number {
+  if (high <= low) return low;
   const u = rng();
-  if (lo > 0) return Math.exp(Math.log(lo) + u * (Math.log(hi) - Math.log(lo)));
-  return lo + u * (hi - lo);
+  if (low > 0)
+    return Math.exp(Math.log(low) + u * (Math.log(high) - Math.log(low)));
+  return low + u * (high - low);
 }
 
 /** Linear-interpolated percentile of an ascending-sorted array (q in [0, 1]). */
@@ -54,5 +58,6 @@ export function percentile(sorted: number[], q: number): number {
     : sorted[i];
 }
 
-export const geoMean = (lo: number, hi: number) =>
-  lo > 0 && hi > 0 ? Math.sqrt(lo * hi) : (lo + hi) / 2;
+/** Geometric mean of a positive range, arithmetic mean otherwise. */
+export const geoMean = (low: number, high: number) =>
+  low > 0 && high > 0 ? Math.sqrt(low * high) : (low + high) / 2;

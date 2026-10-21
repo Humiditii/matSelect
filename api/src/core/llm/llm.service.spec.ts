@@ -3,7 +3,7 @@ import { KeySource } from 'src/common/interface/main.interface';
 import { AppLoggerService } from 'src/common/logging/logging.service';
 import { LlmService, looksLikeKey } from './llm.service';
 
-const make = (env: Record<string, string>) =>
+const createService = (env: Record<string, string>) =>
   new LlmService(
     { get: (k: string) => env[k] } as unknown as ConfigService,
     {
@@ -18,7 +18,7 @@ const SERVER = 'sk-ant-server-key-0123456789abcdefgh';
 
 describe('LlmService key resolution', () => {
   it('uses the server key when configured, ignoring a user key', () => {
-    const llm = make({ ANTHROPIC_API_KEY: SERVER });
+    const llm = createService({ ANTHROPIC_API_KEY: SERVER });
     expect(llm.resolve(USER)).toEqual({
       apiKey: SERVER,
       keySource: KeySource.Server,
@@ -26,7 +26,7 @@ describe('LlmService key resolution', () => {
     expect(llm.hasServerKey).toBe(true);
   });
   it("uses the user's key when the server has none", () => {
-    const llm = make({});
+    const llm = createService({});
     expect(llm.resolve(USER)).toEqual({
       apiKey: USER,
       keySource: KeySource.User,
@@ -34,7 +34,7 @@ describe('LlmService key resolution', () => {
     expect(llm.hasServerKey).toBe(false);
   });
   it('falls back to demo data when there is no usable key', () => {
-    const llm = make({});
+    const llm = createService({});
     expect(llm.resolve(undefined)).toEqual({
       apiKey: null,
       keySource: KeySource.None,
@@ -45,7 +45,10 @@ describe('LlmService key resolution', () => {
     });
   });
   it('LLM_PROVIDER=mock forces demo data', () => {
-    const llm = make({ ANTHROPIC_API_KEY: SERVER, LLM_PROVIDER: 'mock' });
+    const llm = createService({
+      ANTHROPIC_API_KEY: SERVER,
+      LLM_PROVIDER: 'mock',
+    });
     expect(llm.resolve(USER).keySource).toBe(KeySource.None);
     expect(llm.hasServerKey).toBe(false);
   });
