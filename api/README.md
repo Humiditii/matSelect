@@ -234,6 +234,8 @@ The standard properties are `[min, max]` ranges, or `null` when unknown:
 | `lambda` | W/m·K | Thermal conductivity |
 | `alpha` | µstrain/K | Thermal expansion |
 | `price` | USD/kg | |
+| `co2` | kg CO₂e/kg | Cradle-to-gate carbon footprint (typical virgin production) |
+| `embodiedEnergy` | MJ/kg | Cradle-to-gate embodied energy |
 
 Each material also carries:
 - `extra` — values for the brief's custom properties;
@@ -241,7 +243,8 @@ Each material also carries:
 - `ratings` — fresh water, salt water, UV and chemicals, graded A–E;
 - `customRatings` — a grade per user-typed environment;
 - `processes` — 12 workshop processes, each `good`, `possible`, `difficult` or `no`;
-- `forms`, `confidence`, `notes` and `sources` (references the AI recalled).
+- `forms`, `confidence`, `notes` and `sources` (references the AI recalled);
+- sustainability and processing: `recyclability` (good / possible / difficult / no), `renewable`, `biodegradable`, `criticalElements` (raw materials it contains), `hazards`, `processingTips`.
 
 **`null` means unknown, and unknown is never guessed.** The one exception is G ≈ E/2.6 when only E is known, and that estimate is flagged.
 
@@ -273,6 +276,7 @@ Each material also carries:
 | **explanation** | `explanation.service.ts` | Explanation per audience and the number check |
 | **selection** | controller, service, `dto/`, `schema/`, `repository/`, `interface/`, `util/grounding.util.ts`, swagger | Runs selections, lists and fetches them, caches explanations |
 | **apiKey** | controller, service, `dto/`, swagger | `POST /api-key/verify` |
+| **sourcing** | controller, service, `dto/`, swagger | `POST /selections/:id/sourcing`: where to buy the top picks in a country (live web search with Claude; guidance and search links without) |
 | **Logging** (common, global) | `logging.module.ts`, `logging.service.ts` | `AppLoggerService` (winston), injected anywhere |
 
 ### spec — `SpecService.extractSpec(dto, ctx)`
@@ -424,7 +428,22 @@ Two warnings come out of this step:
 - **Close call:** the top two are within 15 points of each other and one of them wins at least 20 % of draws.
 - **Disagreement:** the simulation favourite (≥ 50 %) is not the conservative #1.
 
-### 8.9 Reasons and safety notes
+### 8.9 Footprint, sustainability and processability — `sustainability.ts`
+
+- **Footprint:** for a sized part, CO₂e and energy = part mass × the per-kg range; otherwise per kg. Shown on every ranked material.
+- **"Lowest carbon" goal (`min_carbon`):** sized parts are ranked by mass × CO₂e/kg; indices divide by CO₂ per kg (ρ → ρ·CO₂, e.g. `E^(1/2)/ρ·CO₂`). It runs through the same conservative scoring and Monte Carlo as mass and cost.
+- **"Balanced" goal (`balanced`) — Ashby's penalty function.** With several objectives, the engine ranks by one value-weighted penalty
+  `Z = C·m + α_m·m + α_CO₂·CO₂·m` (USD-equivalent), where C is the price per kg, m the part mass, CO₂ the footprint per kg and the **exchange constants** α_m (USD per kg saved) and α_CO₂ (USD per kg CO₂e, i.e. a carbon price ÷ 1000) say what each objective is worth.
+  - Sized parts: `objectiveValue = Z` (unit `USD eq.`), with the breakdown (material / mass / carbon) in `RankedMaterial.penalty`.
+  - Index mode: each mass-based index is divided by the penalty per kg, `C + α_m + α_CO₂·CO₂` (ρ → ρ·(C + α_m + α_CO₂·CO₂)). Indices without a density term are left alone.
+  - Exchange constants come from `spec.penalty` (Claude suggests them per application; the brief has presets). Without them the engine uses `DEFAULT_ALPHA` ($1/kg, $0.1/kg CO₂e) and warns. Parts whose index doesn't depend on mass (hinge, thermal shock) fall back to the plain ranking with a warning.
+  - Both Z and its inputs are drawn in every Monte Carlo run, so the probabilities account for price and carbon uncertainty too.
+- **Trade-off coordinates (`RankedMaterial.tradeoff`)** feed the results chart: for sized parts the part's mass, material cost and CO₂; in index mode the mass per unit of performance relative to the lightest candidate (from the mass-based indices, combined with the same maximin rule) × price and CO₂ per kg. `null` when the index has no density term.
+- **Critical raw materials** are matched **in code** against the EU list (Regulation (EU) 2024/1252, Annex II, 34 materials, with element names and symbols as aliases). The data source only says what a material contains; it never decides what is "critical".
+- **Must-haves:** `recyclable` (recyclability good or possible) and `renewable`. Unknown values go to "not evaluated", never assumed.
+- **Processability:** easy / moderate / hard from the six everyday workshop processes (2 points per "good", 1 per "possible": ≥ 9 easy, ≥ 5 moderate), plus the processes rated good and the material's tips.
+
+### 8.10 Reasons and safety notes
 
 Reasons are written by code from the numbers, for example:
 - "Lightest part that meets every requirement: about 5.22 kg"
@@ -477,11 +496,23 @@ The JSON Schemas live in `outputs/llm.outputs.ts`. Structured outputs require th
 
 ---
 
+### Sourcing (where to buy)
+
+`SourcingService` covers the top 3 picks. With a key, `LlmService.searchWeb` runs Claude with Anthropic's server-side `web_search` tool:
+- **Location:** localised with `user_location` when the provider supports the country. Some countries (e.g. Nigeria) aren't supported, so it retries without the location; the prompt still names the country and city.
+- **Long searches:** `pause_turn` stops are resumed.
+- **Output:** the answer is JSON in the text (structured outputs can't be combined with search citations). It is validated with zod, and suppliers without a real http(s) URL are dropped.
+- **Honesty:** Claude is told to list only suppliers found in search results, falling back to "general stockists" of the material type.
+- **Caching:** results are cached on the selection under `sourcing.<country>` (`refresh: true` searches again).
+
+Without a key, availability comes from simple rules, with Google search links.
+
 ## 10. Demo (mock) mode
 
 Demo mode is used when no key is available. Everything lives in `core/llm/mock/`.
 
 - **`mock.materials.ts`** — 67 curated materials (at least 10 per family), with typical handbook ranges, ratings, processes and notes. It includes friction materials (pad compounds, sintered bronze, carbon-ceramic, carbon-carbon) carrying `friction_coefficient` and `wear_rate` values. The compact encoding is explained at the top of the file.
+- **`mock.eco.ts`** — demo footprint (typical cradle-to-gate CO₂e and energy, in line with ICE and Ashby eco-data), recyclability, renewability, contained raw materials, hazards and processing tips for every demo material.
 - **`mockExtract`** — keyword idealisation plus regular expressions for loads, lengths, deflection, width, temperature ("survive 600 °C"), budget ("under $20", "$5 per kg"), must-haves and tools. It has profiles:
   - **Structural:** ladder, shelf, bench, drone arm, leg, rope, shaft.
   - **General parts:** brake pad, heat sink, cool box, and a generic "What matters most?" question for anything else.
@@ -537,6 +568,7 @@ All routes are prefixed with `/api`. The full interactive docs are at **`/api-do
 | GET | `/selections/:selectionId` | — | `SelectionResult` |
 | POST | `/selections/:selectionId/explain` | `{ audience }` | `Explanation` (generated once, then cached) |
 | POST | `/api-key/verify` | `{ apiKey }` | `{ valid, model, message, serverHasKey }` |
+| POST | `/selections/:selectionId/sourcing` | `{ country (ISO code), city?, refresh? }` | `{ country, countryName, city, items[{ availability, forms, suppliers[{name,url,note}], searchLinks, notes }], dataSource, note }` (cached per country) |
 
 `/specs/extract`, `/selections` and `/selections/:id/explain` accept the optional **`x-anthropic-api-key`** header (§5).
 

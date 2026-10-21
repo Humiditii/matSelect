@@ -11,6 +11,7 @@ import { SelectionService } from './selection.service';
 @Module({
   controllers: [SelectionController],
   providers: [SelectionRepository, SelectionService],
+  exports: [SelectionRepository, SelectionService],
   imports: [
     MongooseModule.forFeature([
       {

@@ -151,6 +151,8 @@ const SYMBOL: Record<string, string> = {
   strength: 'σ',
   density: 'ρ',
   price: 'C',
+  co2: 'CO₂',
+  embodiedEnergy: 'H',
   lambda: 'λ',
   alpha: 'α',
   Kic: 'K_IC',
@@ -168,6 +170,8 @@ const TERM_ORDER: IndexProp[] = [
   'tMin',
   'density',
   'price',
+  'co2',
+  'embodiedEnergy',
 ];
 
 /** Best small rational approximation (denominator ≤ 12) for display. */
@@ -258,10 +262,21 @@ export function deriveIndices(
       ? { pA: 1, pI: 3, pZ: 2 } // shape only — width value is irrelevant to the exponents
       : { pA: 2, pI: 4, pZ: 3 };
   const panel = section === 'rect_fixed_width';
-  const cost = objective === 'min_cost';
-  const per = cost ? 'per unit cost' : 'per unit mass';
+  // "Cheapest" divides by price per kg (ρ → ρ·C); "lowest carbon" by CO₂ per kg (ρ → ρ·CO₂).
+  const perKey =
+    objective === 'min_cost'
+      ? 'price'
+      : objective === 'min_carbon'
+        ? 'co2'
+        : null;
+  const per =
+    objective === 'min_cost'
+      ? 'per unit cost'
+      : objective === 'min_carbon'
+        ? 'per unit of CO₂'
+        : 'per unit mass';
   const withCost = (t: IndexTerms): IndexTerms =>
-    cost && t.density ? { ...t, price: -1 } : t;
+    perKey && t.density ? { ...t, [perKey]: -1 } : t;
   const defs: IndexDef[] = [];
   const add = (
     criterion: IndexDef['criterion'],
@@ -357,9 +372,9 @@ export function deriveIndices(
     case 'insulation':
       add(
         'single',
-        cost ? { lambda: -1, density: -1, price: -1 } : { lambda: -1 },
-        cost
-          ? 'Insulation: least heat flow per unit cost'
+        perKey ? { lambda: -1, density: -1, [perKey]: -1 } : { lambda: -1 },
+        perKey
+          ? `Insulation: least heat flow ${per}`
           : 'Insulation: least heat flow for a given thickness',
       );
       break;
@@ -373,20 +388,22 @@ export function deriveIndices(
     case 'custom':
       if (custom && Object.keys(custom.terms).length) {
         // DECISION: "cheapest" with an index that has no density term still prefers cheaper stock (÷ price per kg).
-        const t: IndexTerms = cost
-          ? { ...custom.terms, price: -1 }
+        const t: IndexTerms = perKey
+          ? { ...custom.terms, [perKey]: -1 }
           : custom.terms;
         defs.push({
           criterion: 'single',
           terms: t,
           expression: formatIndex(t, custom.symbols),
-          description: custom.description + (cost ? ' (per unit cost)' : ''),
+          description: custom.description + (perKey ? ` (${per})` : ''),
         });
-      } else if (cost)
+      } else if (perKey)
         add(
           'single',
-          { price: -1 },
-          'Cheapest material per kg that meets every requirement',
+          { [perKey]: -1 },
+          perKey === 'price'
+            ? 'Cheapest material per kg that meets every requirement'
+            : 'Lowest carbon footprint per kg that meets every requirement',
         );
       else
         add(

@@ -12,6 +12,7 @@ import {
   PROCESS_LABEL,
   PROCESS_RATING_STYLE,
   RATING_STYLE,
+  RECYCLABILITY_STYLE,
   fmt,
   fmtRange,
   fmtUsd,
@@ -19,11 +20,14 @@ import {
   pct,
 } from '@/lib/labels';
 import { AUDIENCES, Audience, Explanation, Family, Process, ProcessRating, RankedMaterial, SelectionResult } from '@/lib/types';
+import { ChartsCard } from './Charts';
+import { WhereToBuy } from './WhereToBuy';
 import { Badge, Banner, ButtonLink, Card, Collapsible, Segmented, Spinner, cx } from './ui';
 
 function objectiveText(r: SelectionResult, x: number): string {
   if (r.objectiveUnit === 'kg') return `${fmt(x)} kg`;
-  if (r.objectiveUnit === 'USD') return fmtUsd(x);
+  if (r.objectiveUnit === 'USD' || r.objectiveUnit === 'USD eq.') return fmtUsd(x);
+  if (r.objectiveUnit === 'kg CO₂e') return `${fmt(x)} kg CO₂e`;
   return `${fmt(x)}%`;
 }
 
@@ -66,21 +70,99 @@ function Meter({ value, label }: { value: number; label: string }) {
 }
 
 /** Reasons already shown as structured fields on the card (size, cost, probabilities). */
-const DUPLICATED_REASON = /^(Needs a |Material cost about |Best choice in )/;
+const DUPLICATED_REASON =
+  /^(Needs a |Material cost about |Best choice in |Carbon footprint about |Sustainability: |Contains EU critical raw materials|Easy to work|Moderately easy to work|Hard to work)/;
 
-/** Render "E^(1/2)/ρ" with real superscripts. */
-export function IndexExpr({ expr }: { expr: string }) {
-  const parts = expr.split(/\^(\([^)]*\)|-?\d+)/);
+const LEVEL_STYLE = {
+  easy: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  moderate: 'bg-sky-50 text-sky-700 ring-sky-200',
+  hard: 'bg-amber-50 text-amber-800 ring-amber-200',
+} as const;
+
+/** Footprint, sustainability badges and "how to make it", from the engine's per-material summary. */
+function EcoBlock({ r, hazards }: { r: RankedMaterial; hazards: string[] }) {
+  const f = r.footprint;
+  const s = r.sustainability;
+  const p = r.processability;
+  if (!f && !s && !p) return null;
   return (
-    <span>
-      {parts.map((p, i) => (i % 2 ? <sup key={i}>{p.replace(/[()]/g, '')}</sup> : <span key={i}>{p}</span>))}
-    </span>
+    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+      {f?.co2Kg && (
+        <div className="flex items-start gap-2 text-sm">
+          <span aria-hidden>🌱</span>
+          <div>
+            <span className="font-medium text-slate-900">
+              {fmtRange(f.co2Kg, 2)} kg CO₂e
+            </span>
+            <span className="text-slate-500"> {f.basis === 'part' ? 'to make this part' : 'per kg of material'}</span>
+            {f.energyMJ && (
+              <span className="block text-xs text-slate-500">
+                {fmtRange(f.energyMJ, 2)} MJ embodied energy · typical virgin material, cradle to gate
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {s && (
+        <div className="flex flex-wrap gap-1.5">
+          {s.recyclability && (
+            <Badge className={RECYCLABILITY_STYLE[s.recyclability]} title="How practical it is to recycle with today's infrastructure">
+              ♻️ recycling: {s.recyclability}
+            </Badge>
+          )}
+          {s.renewable && <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-200">🌿 renewable</Badge>}
+          {s.biodegradable && <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-200">biodegradable</Badge>}
+          {s.criticalRawMaterials.map((c) => (
+            <Badge key={c} className="bg-violet-50 text-violet-700 ring-violet-200" title="On the EU critical raw materials list (Regulation (EU) 2024/1252): supply risk">
+              ⚠ critical: {c}
+            </Badge>
+          ))}
+        </div>
+      )}
+      {p && (p.level || p.tips.length > 0 || hazards.length > 0) && (
+        <details className="text-sm">
+          <summary className="flex cursor-pointer select-none flex-wrap items-center gap-1.5 text-slate-700">
+            🛠️ How to make it
+            {p.level && <Badge className={LEVEL_STYLE[p.level]}>{p.level} to work</Badge>}
+          </summary>
+          <div className="mt-2 space-y-1.5 text-slate-600">
+            {p.best.length > 0 && <p className="text-xs">Good for: {p.best.map((x) => PROCESS_LABEL[x].toLowerCase()).join(', ')}</p>}
+            {p.tips.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-5">
+                {p.tips.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            )}
+            {hazards.map((h, i) => (
+              <p key={i} className="rounded-lg bg-rose-50 px-2 py-1 text-xs text-rose-800">
+                ⚠️ {h}
+              </p>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
   );
+}
+
+/** Render "E^(1/2)/ρ·(C + α_m)" with real superscripts and subscripts. */
+export function IndexExpr({ expr }: { expr: string }) {
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of expr.matchAll(/\^(\([^)]*\)|-?\d+)|_(CO₂|[a-z]+)/g)) {
+    out.push(<span key={out.length}>{expr.slice(last, m.index)}</span>);
+    out.push(m[1] ? <sup key={out.length}>{m[1].replace(/[()]/g, '')}</sup> : <sub key={out.length}>{m[2]}</sub>);
+    last = m.index! + m[0].length;
+  }
+  out.push(<span key={out.length}>{expr.slice(last)}</span>);
+  return <span>{out}</span>;
 }
 
 function PickCard({ r, res, best }: { r: RankedMaterial; res: SelectionResult; best: boolean }) {
   const medal = ['🥇', '🥈', '🥉'][r.rank - 1];
-  const sources = res.materials.find((m) => m.id === r.materialId)?.sources ?? [];
+  const material = res.materials.find((m) => m.id === r.materialId);
+  const sources = material?.sources ?? [];
   return (
     <article
       className={cx(
@@ -104,7 +186,7 @@ function PickCard({ r, res, best }: { r: RankedMaterial; res: SelectionResult; b
 
       <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
         <div>
-          <p className="text-xs text-slate-500">{res.mode === 'sizing' ? (res.objectiveUnit === 'USD' ? 'Material cost' : 'Part mass') : 'Index score'}</p>
+          <p className="text-xs text-slate-500">{res.mode === 'sizing' ? (res.objectiveUnit === 'USD eq.' ? 'Penalty Z (cost + mass + carbon)' : res.objectiveUnit === 'USD' ? 'Material cost' : res.objectiveUnit === 'kg CO₂e' ? 'Part carbon footprint' : 'Part mass') : 'Index score'}</p>
           <p className="text-xl font-bold text-slate-900">{objectiveText(res, r.objectiveValue)}</p>
           <p className="text-xs text-slate-500" title="10th–90th percentile across the Monte Carlo simulations">
             likely {objectiveText(res, r.objectiveInterval[0])}–{objectiveText(res, r.objectiveInterval[1])}
@@ -136,6 +218,8 @@ function PickCard({ r, res, best }: { r: RankedMaterial; res: SelectionResult; b
           )}
         </dl>
       )}
+
+      <EcoBlock r={r} hazards={material?.hazards ?? []} />
 
       <ul className="mt-3 space-y-1 text-sm text-slate-700">
         {r.reasons.filter((x) => !DUPLICATED_REASON.test(x)).map((x, i) => (
@@ -422,7 +506,11 @@ export function ResultsView({ res }: { res: SelectionResult }) {
         </Banner>
       )}
 
+      <ChartsCard res={res} format={(x) => objectiveText(res, x)} />
+
       <ExplanationPanel res={res} />
+
+      <WhereToBuy res={res} />
 
       {/* All that fit */}
       {res.ranking.length > 3 && (
@@ -433,7 +521,7 @@ export function ResultsView({ res }: { res: SelectionResult }) {
                 <tr>
                   <th className="px-4 py-2 sm:pl-6">#</th>
                   <th className="px-3 py-2">Material</th>
-                  <th className="px-3 py-2">{res.mode === 'sizing' ? (res.objectiveUnit === 'USD' ? 'Cost' : 'Mass') : 'Score'}</th>
+                  <th className="px-3 py-2">{res.mode === 'sizing' ? (res.objectiveUnit === 'USD eq.' ? 'Penalty' : res.objectiveUnit === 'USD' ? 'Cost' : res.objectiveUnit === 'kg CO₂e' ? 'Carbon' : 'Mass') : 'Score'}</th>
                   <th className="px-3 py-2">Likely (p10–p90)</th>
                   {res.mode === 'sizing' && <th className="px-3 py-2">Size</th>}
                   <th className="px-3 py-2 sm:pr-6">Best / top 3</th>
@@ -502,6 +590,7 @@ export function ResultsView({ res }: { res: SelectionResult }) {
                 <th className="px-2 py-2">Strength MPa</th>
                 <th className="px-2 py-2">Max °C</th>
                 <th className="px-2 py-2">Price $/kg</th>
+                <th className="px-2 py-2 normal-case">CO₂e kg/kg</th>
                 <th className="px-2 py-2">Water</th>
                 <th className="px-2 py-2">UV</th>
                 {res.spec.customProperties?.map((cp) => (
@@ -534,6 +623,7 @@ export function ResultsView({ res }: { res: SelectionResult }) {
                   <td className="whitespace-nowrap px-2 py-2">{fmtRange(m.strength)}</td>
                   <td className="whitespace-nowrap px-2 py-2">{fmtRange(m.tMax)}</td>
                   <td className="whitespace-nowrap px-2 py-2">{fmtRange(m.price)}</td>
+                  <td className="whitespace-nowrap px-2 py-2">{fmtRange(m.co2 ?? null)}</td>
                   <td className="px-2 py-2">
                     <RatingCell r={m.ratings.fresh_water} />
                   </td>

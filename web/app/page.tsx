@@ -223,6 +223,8 @@ function Home() {
           customProperties: o.customProperties ?? [],
           propertyLimits: o.propertyLimits ?? [],
           customObjective: o.customObjective ?? null,
+          penalty: o.penalty ?? null,
+          country: o.country ?? null,
         });
         setText(r.spec.sourceText);
         setAudience(r.spec.audience);

@@ -81,6 +81,10 @@ export class Selection {
   @Prop({ type: Object, default: {} })
   explanations: Record<string, any>;
 
+  /** Where-to-buy results, keyed by country code. */
+  @Prop({ type: Object, default: {} })
+  sourcing: Record<string, any>;
+
   @Prop({ type: Object, default: {} })
   timingsMs: Record<string, number>;
 

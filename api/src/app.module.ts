@@ -14,6 +14,7 @@ import { ExplanationModule } from './core/explanation/explanation.module';
 import { LlmModule } from './core/llm/llm.module';
 import { MaterialModule } from './core/material/material.module';
 import { SelectionModule } from './core/selection/selection.module';
+import { SourcingModule } from './core/sourcing/sourcing.module';
 import { SpecModule } from './core/spec/spec.module';
 
 @Module({
@@ -26,8 +27,7 @@ import { SpecModule } from './core/spec/spec.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => ({
-        uri:
-          config.get<string>('DB_URL'),
+        uri: config.get<string>('DB_URL'),
         serverSelectionTimeoutMS: 5000,
       }),
     }),
@@ -50,6 +50,7 @@ import { SpecModule } from './core/spec/spec.module';
     ExplanationModule,
     SelectionModule,
     ApiKeyModule,
+    SourcingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -13,6 +13,7 @@ import {
   IndexInfo,
   Material,
   Mode,
+  Objective,
   PROPERTY_META,
   Process,
   ProcessRating,
@@ -73,6 +74,11 @@ import {
   SUPPORTED_UNITS,
 } from './units';
 import { validateMaterials } from './validate';
+import {
+  processabilityOf,
+  scaleRange,
+  sustainabilityOf,
+} from './sustainability';
 
 export interface EngineOptions {
   mcSamples: number;
@@ -139,8 +145,22 @@ interface ResolvedDesign {
   indices: IndexDef[];
   warnings: string[];
   activeConstraints: string[];
-  costObjective: boolean;
+  /** Effective goal: lightest (or best performance), cheapest, lowest carbon, or balanced (penalty function). */
+  goal: Objective;
+  /** Exchange constants for the balanced goal (USD per kg of mass, USD per kg CO₂e). */
+  alpha: { mass: number; co2: number } | null;
+  /** Mass-based indices, used to place materials on the trade-off chart in index mode. */
+  massIndices: IndexDef[];
 }
+
+/** DECISION: exchange constants when the user picks "balanced" without values: $1 per kg saved, carbon at $100/t. */
+export const DEFAULT_ALPHA = { mass: 1, co2: 0.1 };
+const GOAL_NAME: Record<Objective, string> = {
+  min_mass: 'lightest',
+  min_cost: 'cheapest',
+  min_carbon: 'lowest carbon',
+  balanced: 'balanced',
+};
 
 const SIZING_COMPONENTS = ['beam', 'tie', 'column', 'shaft'] as const;
 type SizingComponent = (typeof SIZING_COMPONENTS)[number];
@@ -172,12 +192,22 @@ export function resolveDesign(spec: DesignSpec): ResolvedDesign {
     );
   }
 
-  let costObjective = spec.objective === 'min_cost';
-  if (costObjective && MASSLESS_INDEX.includes(spec.component)) {
+  let goal: Objective = spec.objective;
+  if (goal !== 'min_mass' && MASSLESS_INDEX.includes(spec.component)) {
     warnings.push(
-      'The goal "cheapest" does not change this ranking: the index for this part does not depend on how much material is used.',
+      `The goal "${GOAL_NAME[goal]}" does not change this ranking: the index for this part does not depend on how much material is used.`,
     );
-    costObjective = false;
+    goal = 'min_mass';
+  }
+  let alpha: { mass: number; co2: number } | null = null;
+  if (goal === 'balanced') {
+    alpha = spec.penalty
+      ? { mass: spec.penalty.alphaMass, co2: spec.penalty.alphaCo2 }
+      : DEFAULT_ALPHA;
+    if (!spec.penalty)
+      warnings.push(
+        `No exchange constants were given for the balanced goal, so $${DEFAULT_ALPHA.mass} per kg saved and $${DEFAULT_ALPHA.co2} per kg CO₂e (a carbon price of $${DEFAULT_ALPHA.co2 * 1000}/t) were assumed.`,
+      );
   }
 
   let section = spec.section;
@@ -218,13 +248,22 @@ export function resolveDesign(spec: DesignSpec): ResolvedDesign {
           symbols,
         }
       : null;
-  const indices = deriveIndices(
+  // The balanced goal ranks the mass-based index divided by the penalty per kg (C + α_m + α_CO₂·CO₂).
+  const massIndices = deriveIndices(
     spec.component,
     spec.criteria,
     section,
-    costObjective ? 'min_cost' : 'min_mass',
+    'min_mass',
     custom,
   );
+  const indices =
+    goal === 'balanced'
+      ? massIndices.map((idx) => ({
+          ...idx,
+          expression: `${idx.expression}·(C + α_m + α_CO₂·CO₂)`,
+          description: `${idx.description}, per unit of penalty (cost + value of mass + value of carbon)`,
+        }))
+      : deriveIndices(spec.component, spec.criteria, section, goal, custom);
 
   // ---- Sizing mode? -------------------------------------------------------
   let sizing: SizingCase | null = null;
@@ -350,6 +389,10 @@ export function resolveDesign(spec: DesignSpec): ResolvedDesign {
   }
 
   // ---- Screening constraints, stated for the user ------------------------
+  if (alpha)
+    active.push(
+      `Penalty Z = material cost + $${fmt(alpha.mass)} per kg of mass + $${fmt(alpha.co2)} per kg CO₂e${spec.penalty?.rationale ? ` (${spec.penalty.rationale})` : ''}`,
+    );
   for (const l of spec.propertyLimits) active.push(describeLimit(spec, l));
   if (spec.tempRangeC)
     active.push(
@@ -394,7 +437,9 @@ export function resolveDesign(spec: DesignSpec): ResolvedDesign {
     indices,
     warnings,
     activeConstraints: active,
-    costObjective,
+    goal,
+    alpha,
+    massIndices,
   };
 }
 
@@ -460,10 +505,16 @@ function requiredProperties(spec: DesignSpec, d: ResolvedDesign): Needs {
       if (s.checkStiffness) props.add('E');
       if (s.checkStrength) props.add('strength');
     }
-    if (d.costObjective || spec.budgetPerPart !== null) props.add('price');
+    if (d.goal === 'min_cost' || spec.budgetPerPart !== null)
+      props.add('price');
+    if (d.goal === 'min_carbon') props.add('co2');
   }
   // In index mode, the index only carries the criteria actually asked for (handled above).
   if (spec.maxPricePerKg !== null) props.add('price');
+  if (d.alpha) {
+    props.add('price');
+    if (d.alpha.co2 > 0) props.add('co2');
+  }
   if (spec.tempRangeC) {
     props.add('tMax');
     if (spec.tempRangeC[0] < 0) props.add('tMin');
@@ -538,6 +589,18 @@ function screen(m: Material, spec: DesignSpec, needs: Needs): ScreenOutcome {
     reasons.push('Not transparent');
   if (spec.mustHave.includes('electrical_insulator') && !m.electricalInsulator)
     reasons.push('Conducts electricity — you need an electrical insulator');
+  if (spec.mustHave.includes('recyclable')) {
+    if (!m.recyclability) missing.push('recyclability');
+    else if (m.recyclability === 'difficult' || m.recyclability === 'no')
+      reasons.push(
+        `Hard to recycle (recyclability: ${m.recyclability === 'no' ? 'not recyclable' : 'difficult'})`,
+      );
+  }
+  if (spec.mustHave.includes('renewable')) {
+    if (m.renewable === null || m.renewable === undefined)
+      missing.push('whether it is renewable');
+    else if (!m.renewable) reasons.push('Not made from a renewable source');
+  }
   if (spec.mustHave.includes('impact_resistant') && m.brittle)
     reasons.push('Brittle — can crack or shatter under impact');
 
@@ -626,6 +689,8 @@ interface PropDraw {
   price: number;
   lambda: number;
   alpha: number;
+  /** CO₂e per kg (nominal: central value). */
+  co2: number;
   /** Every property in its stored unit (GPa, MPa, kg/m³, USD/kg, °C, µstrain/K, …), incl. custom ones — for indices. */
   ix: Record<string, number>;
 }
@@ -657,6 +722,7 @@ function nominalProps(m: Material): PropDraw {
     price: mid(m.price),
     lambda: hi(m.lambda),
     alpha: hi(m.alpha) * 1e-6,
+    co2: mid(m.co2),
     ix: {},
   };
 }
@@ -694,6 +760,7 @@ function drawProps(
     price: s(m.price),
     lambda: s(m.lambda),
     alpha: s(m.alpha) * 1e-6,
+    co2: NaN,
     ix: {},
   };
   d.ix = {
@@ -707,7 +774,10 @@ function drawProps(
     Kic: s(m.Kic),
     tMax: s(m.tMax),
     tMin: s(m.tMin),
+    co2: s(m.co2),
+    embodiedEnergy: s(m.embodiedEnergy),
   };
+  d.co2 = d.ix.co2;
   for (const k of Object.keys(m.extra ?? {}).sort()) d.ix[k] = s(m.extra[k]);
   return d;
 }
@@ -807,7 +877,11 @@ export function runSelection(
       const props = nominalIndexProps(c.m, idx.terms);
       if (c.gEstimated && 'G' in idx.terms && c.m.E)
         props.G = (idx.terms.G! > 0 ? c.m.E[0] : c.m.E[1]) / G_FROM_E;
-      c.indexValues[indexKey(idx, design)] = evaluateIndex(idx.terms, props);
+      c.indexValues[indexKey(idx, design)] =
+        evaluateIndex(idx.terms, props) /
+        (idx.terms.density
+          ? penaltyPerKg(design, mid(c.m.price), mid(c.m.co2 ?? null))
+          : 1);
     }
     if (design.mode === 'sizing') {
       const r = evaluateSizing(design, c.geometry!, c.nominal);
@@ -837,9 +911,7 @@ export function runSelection(
         governing: GOVERNING_TEXT[r.governing],
         notes,
       };
-      c.objective = design.costObjective
-        ? r.massKg * c.nominal.price
-        : r.massKg;
+      c.objective = r.massKg * perKgFactor(design, c.nominal);
 
       // DECISION: slender-member formulas are meaningless if the section is as big as the span.
       if (
@@ -922,13 +994,17 @@ export function runSelection(
         values = draws.map((p, i) => {
           const r = evaluateSizing(design, g[i]!, p);
           if (!r) return NaN;
-          return design.costObjective ? r.massKg * p.price : r.massKg;
+          return r.massKg * perKgFactor(design, p);
         });
       } else {
         const iv = draws.map((p) => {
           const out: Record<string, number> = {};
           for (const idx of design.indices)
-            out[indexKey(idx, design)] = evaluateIndex(idx.terms, p.ix);
+            out[indexKey(idx, design)] =
+              evaluateIndex(idx.terms, p.ix) /
+              (idx.terms.density
+                ? penaltyPerKg(design, p.ix.price, p.ix.co2)
+                : 1);
           return out;
         });
         const best = indexBests(iv);
@@ -943,6 +1019,8 @@ export function runSelection(
       for (const [, i] of order.slice(0, 3)) top3Count[i]++;
     }
   }
+
+  const tradeoffs = tradeoffOf(design, fitting);
 
   // ---- Assemble ranking with code-generated reasons -----------------------
   const ranking: RankedMaterial[] = fitting.map((c, i) => {
@@ -965,6 +1043,11 @@ export function runSelection(
       indexValues: c.indexValues,
       sizing: c.sizing,
       processFit,
+      footprint: footprintOf(c.m, c.sizing),
+      tradeoff: tradeoffs[i],
+      penalty: penaltyOf(design, c),
+      sustainability: sustainabilityOf(c.m),
+      processability: processabilityOf(c.m),
       reasons: [],
       dataFlags: Array.from(new Set(c.flags)),
     };
@@ -1012,14 +1095,22 @@ export function runSelection(
   const index: IndexInfo = {
     expression: design.indices.map((x) => x.expression).join(' and '),
     description: design.indices.map((x) => x.description).join('; '),
-    cost: design.costObjective,
+    cost: design.goal === 'min_cost',
   };
 
   const objective =
     design.mode === 'sizing'
-      ? design.costObjective
-        ? { label: 'Lowest material cost of the part', unit: 'USD' }
-        : { label: 'Lowest mass of the part', unit: 'kg' }
+      ? design.goal === 'balanced'
+        ? {
+            label:
+              'Lowest penalty Z of the part (material cost + value of mass + value of carbon)',
+            unit: 'USD eq.',
+          }
+        : design.goal === 'min_cost'
+          ? { label: 'Lowest material cost of the part', unit: 'USD' }
+          : design.goal === 'min_carbon'
+            ? { label: 'Lowest carbon footprint of the part', unit: 'kg CO₂e' }
+            : { label: 'Lowest mass of the part', unit: 'kg' }
       : { label: 'Performance index, as % of the best candidate', unit: '%' };
 
   return {
@@ -1041,6 +1132,96 @@ export function runSelection(
     mcSamples: N,
     seed,
   };
+}
+
+/** Carbon and energy for the sized part, or per kg when the part isn't sized. */
+function footprintOf(m: Material, sizing: Sizing | null) {
+  if (!m.co2 && !m.embodiedEnergy) return null;
+  const mass = sizing ? sizing.massKg : 1;
+  return {
+    basis: sizing ? ('part' as const) : ('kg' as const),
+    co2Kg: scaleRange(m.co2 ?? null, mass),
+    energyMJ: scaleRange(m.embodiedEnergy ?? null, mass),
+  };
+}
+
+/** Penalty breakdown for a sized part under the balanced goal (nominal values). */
+function penaltyOf(d: ResolvedDesign, c: Candidate) {
+  if (!d.alpha || !c.sizing) return null;
+  const m = c.sizing.massKg;
+  const material = m * c.nominal.price;
+  const mass = d.alpha.mass * m;
+  const carbon = d.alpha.co2 > 0 ? d.alpha.co2 * m * c.nominal.co2 : 0;
+  return {
+    z: material + mass + carbon,
+    material,
+    mass,
+    carbon,
+    alphaMass: d.alpha.mass,
+    alphaCo2: d.alpha.co2,
+  };
+}
+
+/**
+ * Where each material sits on the trade-off chart. Sized parts: the part's mass, material cost and carbon.
+ * Index mode: mass per unit of performance relative to the lightest candidate (from the mass-based indices),
+ * times price and CO₂ per kg. None when the part's index doesn't depend on mass (e.g. a brake-pad wear index).
+ */
+function tradeoffOf(d: ResolvedDesign, fitting: Candidate[]) {
+  const finiteOrNull = (x: number) => (Number.isFinite(x) ? x : null);
+  if (d.mode === 'sizing')
+    return fitting.map((c) =>
+      c.sizing
+        ? {
+            basis: 'part' as const,
+            mass: c.sizing.massKg,
+            cost: finiteOrNull(c.sizing.massKg * c.nominal.price),
+            co2: finiteOrNull(c.sizing.massKg * c.nominal.co2),
+          }
+        : null,
+    );
+  if (
+    !d.massIndices.length ||
+    !d.massIndices.every((idx) => idx.terms.density === -1)
+  )
+    return fitting.map(() => null);
+  const values = fitting.map((c) => {
+    const out: Record<string, number> = {};
+    for (const idx of d.massIndices) {
+      const props = nominalIndexProps(c.m, idx.terms);
+      if (c.gEstimated && 'G' in idx.terms && c.m.E)
+        props.G = (idx.terms.G! > 0 ? c.m.E[0] : c.m.E[1]) / G_FROM_E;
+      out[idx.expression] = evaluateIndex(idx.terms, props);
+    }
+    return out;
+  });
+  const best = indexBests(values);
+  return fitting.map((c, i) => {
+    const score = combinedScore(values[i], best);
+    if (!Number.isFinite(score) || score <= 0) return null;
+    const rel = 100 / score; // 1 = lightest for the same performance
+    return {
+      basis: 'relative' as const,
+      mass: rel,
+      cost: finiteOrNull(rel * c.nominal.price),
+      co2: finiteOrNull(rel * c.nominal.co2),
+    };
+  });
+}
+
+/**
+ * Penalty per kg of material for the balanced goal: C + α_m + α_CO₂·CO₂ (USD-equivalent per kg).
+ * 1 for every other goal, so indices are unchanged.
+ */
+function penaltyPerKg(d: ResolvedDesign, price: number, co2: number): number {
+  if (!d.alpha) return 1;
+  return price + d.alpha.mass + (d.alpha.co2 > 0 ? d.alpha.co2 * co2 : 0);
+}
+
+/** What one kg of material "costs" under the goal: 1 (mass), USD (cost), kg CO₂e (carbon) or penalty (balanced). */
+function perKgFactor(d: ResolvedDesign, p: PropDraw): number {
+  if (d.goal === 'balanced') return penaltyPerKg(d, p.price, p.co2);
+  return d.goal === 'min_cost' ? p.price : d.goal === 'min_carbon' ? p.co2 : 1;
 }
 
 const indexKey = (idx: IndexDef, d: ResolvedDesign) =>
@@ -1080,16 +1261,30 @@ function addReasons(
     if (d.mode === 'sizing' && r.sizing) {
       if (i === 0)
         out.push(
-          d.costObjective
-            ? `Cheapest part that meets every requirement: about ${fmtUsd(r.objectiveValue)} of material`
-            : `Lightest part that meets every requirement: about ${fmt(r.objectiveValue)} kg`,
+          d.goal === 'balanced' && r.penalty
+            ? `Best balance of cost, mass and carbon: penalty about ${fmtUsd(r.penalty.z)} (material ${fmtUsd(r.penalty.material)} + mass ${fmtUsd(r.penalty.mass)} + carbon ${fmtUsd(r.penalty.carbon)})`
+            : d.goal === 'min_cost'
+              ? `Cheapest part that meets every requirement: about ${fmtUsd(r.objectiveValue)} of material`
+              : d.goal === 'min_carbon'
+                ? `Lowest-carbon part that meets every requirement: about ${fmt(r.objectiveValue)} kg CO₂e`
+                : `Lightest part that meets every requirement: about ${fmt(r.objectiveValue)} kg`,
         );
       else {
         const ratio = r.objectiveValue / top.objectiveValue;
-        const what = d.costObjective ? 'material cost' : 'mass';
-        const value = d.costObjective
-          ? fmtUsd(r.objectiveValue)
-          : `${fmt(r.objectiveValue)} kg`;
+        const what =
+          d.goal === 'balanced'
+            ? 'penalty'
+            : d.goal === 'min_cost'
+              ? 'material cost'
+              : d.goal === 'min_carbon'
+                ? 'carbon footprint'
+                : 'mass';
+        const value =
+          d.goal === 'min_cost' || d.goal === 'balanced'
+            ? fmtUsd(r.objectiveValue)
+            : d.goal === 'min_carbon'
+              ? `${fmt(r.objectiveValue)} kg CO₂e`
+              : `${fmt(r.objectiveValue)} kg`;
         out.push(
           ratio < 1.05
             ? `Practically the same ${what} as the top pick (${value})`
@@ -1098,11 +1293,11 @@ function addReasons(
       }
       out.push(`Needs a ${r.sizing.dimension}`);
       out.push(`Size is set by ${r.sizing.governing}`);
-      if (!d.costObjective && r.sizing.costUsd)
+      if (d.goal !== 'min_cost' && r.sizing.costUsd)
         out.push(
           `Material cost about ${fmtUsd(r.sizing.costUsd[0])}–${fmtUsd(r.sizing.costUsd[1])}`,
         );
-      if (d.costObjective)
+      if (d.goal !== 'min_mass')
         out.push(`Part mass about ${fmt(r.sizing.massKg)} kg`);
       out.push(...r.sizing.notes);
     } else {
@@ -1146,6 +1341,37 @@ function addReasons(
       if (pr)
         out.push(`${meta.label}: about ${withUnit(fmtRange(pr), meta.unit)}`);
     }
+    if (r.footprint?.co2Kg) {
+      const f = r.footprint;
+      out.push(
+        f.basis === 'part'
+          ? `Carbon footprint about ${fmtRange(f.co2Kg!)} kg CO₂e for this part${f.energyMJ ? ` (${fmtRange(f.energyMJ)} MJ to make)` : ''}`
+          : `Carbon footprint about ${fmtRange(f.co2Kg!)} kg CO₂e per kg of material`,
+      );
+    }
+    const sus = r.sustainability;
+    const susBits = [
+      sus.recyclability && `recyclability ${sus.recyclability}`,
+      sus.renewable && 'renewable source',
+      sus.biodegradable && 'biodegradable',
+    ].filter(Boolean);
+    if (susBits.length) out.push(`Sustainability: ${susBits.join(', ')}`);
+    if (sus.criticalRawMaterials.length)
+      out.push(
+        `Contains EU critical raw materials: ${sus.criticalRawMaterials.join(', ')}`,
+      );
+    const pr = r.processability;
+    if (pr.level)
+      out.push(
+        `${pr.level === 'easy' ? 'Easy' : pr.level === 'moderate' ? 'Moderately easy' : 'Hard'} to work${
+          pr.best.length
+            ? `: good for ${pr.best
+                .slice(0, 3)
+                .map((p) => PROCESS_LABEL[p])
+                .join(', ')}`
+            : ''
+        }`,
+      );
     const tools = Object.entries(r.processFit) as [Process, ProcessRating][];
     if (tools.length)
       out.push(
@@ -1155,7 +1381,9 @@ function addReasons(
       out.push(`Rated to about ${fmt(c.m.tMax[0])}–${fmt(c.m.tMax[1])} °C`);
     if (
       c.m.price &&
-      (d.costObjective || spec.maxPricePerKg !== null || d.mode === 'index')
+      (d.goal === 'min_cost' ||
+        spec.maxPricePerKg !== null ||
+        d.mode === 'index')
     )
       out.push(
         `Price about ${fmtUsd(c.m.price[0])}–${fmtUsd(c.m.price[1])} per kg`,

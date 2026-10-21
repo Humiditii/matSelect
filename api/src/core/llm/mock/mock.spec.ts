@@ -9,6 +9,18 @@ const extract = (text: string) =>
   DesignSpec.parse(mockExtract(text, 'everyday').spec);
 
 describe('mock extraction', () => {
+  it('two goals named → balanced, with exchange constants for the application', () => {
+    const s = extract('A lightweight but cheap drone arm, 25 cm long');
+    expect(s.objective).toBe('balanced');
+    expect(s.penalty).toMatchObject({ alphaMass: 100, alphaCo2: 0.1 });
+    expect(extract('An eco-friendly shelf 80 cm long').objective).toBe(
+      'min_carbon',
+    );
+    expect(
+      extract('A shelf holding the weight of books, cheap').objective,
+    ).toBe('min_cost');
+  });
+
   it('bookshelf: span vs depth, uniform load, cost goal', () => {
     const s = extract(
       'A bookshelf board 90 cm long and 25 cm deep, holding about 30 kg of books. I have woodworking tools and a drill.',
@@ -206,5 +218,21 @@ describe('plain-word refinements', () => {
     );
     expect(g.mustHave.sort()).toEqual(['impact_resistant', 'transparent']);
     expect(g.maxPricePerKg).toBe(5);
+  });
+});
+
+describe('demo footprint and sustainability data', () => {
+  it('every demo material has plausible footprint data and a recyclability rating', () => {
+    for (const m of MOCK_MATERIALS) {
+      expect(m.co2).not.toBeNull();
+      expect(m.embodiedEnergy).not.toBeNull();
+      expect(m.co2![0]).toBeLessThanOrEqual(m.co2![1]);
+      expect(m.recyclability).not.toBeNull();
+      expect(m.processingTips.length).toBeGreaterThan(0);
+    }
+    const v = validateMaterials(
+      MOCK_MATERIALS.map((m, i) => ({ ...m, id: String(i) })),
+    );
+    expect(v.invalid).toEqual([]);
   });
 });

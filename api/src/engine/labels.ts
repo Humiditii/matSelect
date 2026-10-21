@@ -43,6 +43,8 @@ export const MUST_HAVE_LABEL: Record<MustHave, string> = {
   transparent: 'transparent',
   electrical_insulator: 'electrically insulating',
   impact_resistant: 'impact resistant',
+  recyclable: 'recyclable',
+  renewable: 'from a renewable source',
 };
 
 export const SECTION_LABEL: Record<Section, string> = {

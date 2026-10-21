@@ -2,14 +2,15 @@
 
 export const AUDIENCES = ['craftsman', 'everyday', 'engineer'] as const;
 export const COMPONENTS = ['beam', 'tie', 'column', 'shaft', 'spring', 'hinge', 'insulation', 'thermal_shock', 'custom'] as const;
-export const OBJECTIVES = ['min_mass', 'min_cost'] as const;
+export const OBJECTIVES = ['min_mass', 'min_cost', 'min_carbon', 'balanced'] as const;
 export const CRITERIA = ['stiffness', 'strength'] as const;
 export const SUPPORTS = ['simply_supported_center', 'simply_supported_uniform', 'cantilever_end'] as const;
 export const END_CONDITIONS = ['pinned_pinned', 'fixed_free', 'fixed_fixed', 'fixed_pinned'] as const;
 export const SECTIONS = ['solid_square', 'solid_round', 'round_tube', 'square_tube', 'rect_fixed_width'] as const;
 export const ENVIRONMENTS = ['indoor', 'outdoor', 'wet', 'marine', 'chemical', 'food_contact'] as const;
 export const PROCESSES = ['hand_cut', 'power_cut', 'drill', 'machine', 'weld', 'glue', 'fasten', 'bend', 'cast', 'mould', 'print_3d', 'woodwork'] as const;
-export const MUST_HAVES = ['transparent', 'electrical_insulator', 'impact_resistant'] as const;
+export const MUST_HAVES = ['transparent', 'electrical_insulator', 'impact_resistant', 'recyclable', 'renewable'] as const;
+export type Recyclability = 'good' | 'possible' | 'difficult' | 'no';
 export const FAMILIES = ['metal', 'polymer', 'ceramic_glass', 'composite', 'wood_natural', 'foam_elastomer'] as const;
 export const SAFETY_CLASSES = ['general', 'carries_people', 'lifting'] as const;
 
@@ -41,7 +42,7 @@ export interface Quantity {
   unit: string;
 }
 
-export const STANDARD_PROPERTIES = ['density', 'E', 'G', 'strength', 'Kic', 'tMax', 'tMin', 'lambda', 'alpha', 'price'] as const;
+export const STANDARD_PROPERTIES = ['density', 'E', 'G', 'strength', 'Kic', 'tMax', 'tMin', 'lambda', 'alpha', 'price', 'co2', 'embodiedEnergy'] as const;
 export type StandardProperty = (typeof STANDARD_PROPERTIES)[number];
 
 export interface CustomProperty {
@@ -97,6 +98,18 @@ export interface DesignSpec {
   customProperties: CustomProperty[];
   propertyLimits: PropertyLimit[];
   customObjective: CustomObjective | null;
+  /** Exchange constants for the "balanced" goal (Ashby's penalty function); null = defaults. */
+  penalty?: Penalty | null;
+  /** Two-letter country code for availability and suppliers, e.g. "NG". */
+  country?: string | null;
+}
+
+export interface Penalty {
+  /** USD the user would pay to save 1 kg of part mass. */
+  alphaMass: number;
+  /** USD per kg CO₂e (carbon price per tonne ÷ 1000). */
+  alphaCo2: number;
+  rationale: string;
 }
 
 export interface Question {
@@ -137,6 +150,14 @@ export interface Material {
   forms: string[];
   extra?: Record<string, Range | null>;
   sources?: string[];
+  co2?: Range | null;
+  embodiedEnergy?: Range | null;
+  recyclability?: Recyclability | null;
+  renewable?: boolean | null;
+  biodegradable?: boolean | null;
+  criticalElements?: string[];
+  hazards?: string[];
+  processingTips?: string[];
   confidence: Confidence;
   notes: string;
 }
@@ -166,6 +187,20 @@ export interface RankedMaterial {
   indexValues: Record<string, number>;
   sizing: Sizing | null;
   processFit: Partial<Record<Process, ProcessRating>>;
+  /** Missing on results saved before these features. */
+  footprint?: { basis: 'part' | 'kg'; co2Kg: Range | null; energyMJ: Range | null } | null;
+  sustainability?: {
+    recyclability: Recyclability | null;
+    renewable: boolean | null;
+    biodegradable: boolean | null;
+    criticalRawMaterials: string[];
+    hazards: string[];
+  };
+  processability?: { level: 'easy' | 'moderate' | 'hard' | null; best: Process[]; tips: string[] };
+  /** Coordinates for the trade-off chart: the part's mass, cost and CO₂ ('part'), or per unit of performance relative to the lightest ('relative'). */
+  tradeoff?: { basis: 'part' | 'relative'; mass: number; cost: number | null; co2: number | null } | null;
+  /** Penalty breakdown for a sized part under the balanced goal. */
+  penalty?: { z: number; material: number; mass: number; carbon: number; alphaMass: number; alphaCo2: number } | null;
   reasons: string[];
   dataFlags: string[];
 }
@@ -208,6 +243,7 @@ export interface SelectionResult {
   dataSource: DataSource;
   keySource?: 'server' | 'user' | 'none';
   explanations: Partial<Record<Audience, Explanation>>;
+  sourcing?: Partial<Record<string, SourcingResult>>;
   timingsMs: Record<string, number>;
   mcSamples: number;
   seed: number;
@@ -229,4 +265,22 @@ export interface Health {
   acceptsUserKey: boolean;
   model: string;
   database: 'connected' | 'disconnected';
+}
+
+export interface SourcingResult {
+  country: string;
+  countryName: string;
+  city: string | null;
+  generatedAt: string;
+  dataSource: DataSource;
+  note: string;
+  items: {
+    materialId: string;
+    name: string;
+    availability: 'widely available' | 'specialist suppliers' | 'likely imported' | null;
+    forms: string[];
+    suppliers: { name: string; url: string; note: string }[];
+    searchLinks: { label: string; url: string }[];
+    notes: string;
+  }[];
 }

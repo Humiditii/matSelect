@@ -122,6 +122,25 @@ export function buildPayload(res: SelectionResult) {
             }
           : null,
         references: m?.sources ?? [],
+        footprint: r.footprint
+          ? {
+              basis:
+                r.footprint.basis === 'part'
+                  ? 'for this part'
+                  : 'per kg of material',
+              co2_kgCO2e: r3r(r.footprint.co2Kg),
+              energy_MJ: r3r(r.footprint.energyMJ),
+            }
+          : null,
+        sustainability: r.sustainability
+          ? {
+              recyclability: r.sustainability.recyclability,
+              renewable: r.sustainability.renewable,
+              biodegradable: r.sustainability.biodegradable,
+              euCriticalRawMaterials: r.sustainability.criticalRawMaterials,
+            }
+          : null,
+        processability: r.processability?.level ?? null,
       };
     }),
     ruledOut: pickRejected().map((r) => ({

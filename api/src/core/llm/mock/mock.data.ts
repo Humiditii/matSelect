@@ -259,7 +259,37 @@ export function mockExtract(
     assumptions,
   };
   const explicitLight = /\b(light|lightweight|weight|portable|carry)\b/.test(t);
-  if (base.objective === 'min_cost')
+  const wantsCheap = base.objective === 'min_cost';
+  const wantsGreen =
+    /\b(eco|green|sustainable|low[- ]carbon|environment(al)?)\b/.test(t);
+  // "weight" alone often means the load ("holds the weight of books"), so it doesn't count as a goal here.
+  const wantsLight = /\b(light|lightweight|portable)\b/.test(t);
+  const goalsNamed = [wantsLight, wantsCheap, wantsGreen].filter(
+    Boolean,
+  ).length;
+  if (goalsNamed >= 2 || /\b(balance|balanced|trade[- ]?off)\b/.test(t)) {
+    // DECISION: two or more goals named → Ashby's penalty function, with exchange constants by application.
+    base.objective = 'balanced';
+    const alphaMass = /\b(drone|uav|aircraft|plane)\b/.test(t)
+      ? 100
+      : /\b(bike|bicycle|car|vehicle|racing)\b/.test(t)
+        ? 10
+        : 1;
+    const alphaCo2 = wantsGreen ? 0.2 : 0.1;
+    base.penalty = {
+      alphaMass,
+      alphaCo2,
+      rationale: `Typical values for this kind of product: $${alphaMass} per kg saved and $${alphaCo2 * 1000}/t CO₂e.`,
+    };
+    assumptions.push(
+      `Goal is the best balance of cost, weight and carbon, valuing each kg saved at $${alphaMass} and carbon at $${alphaCo2 * 1000} per tonne.`,
+    );
+  } else if (wantsGreen) {
+    base.objective = 'min_carbon';
+    assumptions.push(
+      'Goal is the lowest carbon footprint, because you asked for an eco-friendly part.',
+    );
+  } else if (base.objective === 'min_cost')
     assumptions.push(
       'Goal is the cheapest part, because you asked for low cost.',
     );
@@ -806,9 +836,11 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 function headline(r: Ranked, p: ExplanationPayload): string {
   if (p.mode === 'sizing' && r.size) {
     const value =
-      p.objective.unit === 'USD'
-        ? `about ${fmtUsd(r.objectiveValue ?? 0)} of material`
-        : `about ${fmt(r.size.massKg ?? 0)} kg`;
+      p.objective.unit === 'USD eq.'
+        ? `penalty about ${fmtUsd(r.objectiveValue ?? 0)}`
+        : p.objective.unit === 'USD'
+          ? `about ${fmtUsd(r.objectiveValue ?? 0)} of material`
+          : `about ${fmt(r.size.massKg ?? 0)} kg`;
     return `${r.size.description}, ${value}`;
   }
   return `${fmt(r.objectiveValue ?? 0)}% of the best performance index`;
@@ -841,9 +873,11 @@ export function mockExplanation(
       out.push(
         `The best choice is **${nameOf(top)}**. Out of ${p.counts.considered} materials we looked at, ${p.counts.fit} can do the job, and this one ${
           p.mode === 'sizing' && top.size
-            ? p.objective.unit === 'USD'
-              ? `does it for the least money — about ${fmtUsd(top.objectiveValue ?? 0)} of material`
-              : `does it with the least weight — about ${fmt(top.size.massKg ?? 0)} kg`
+            ? p.objective.unit === 'USD eq.'
+              ? `gives the best balance of cost, weight and carbon — a penalty of about ${fmtUsd(top.objectiveValue ?? 0)}`
+              : p.objective.unit === 'USD'
+                ? `does it for the least money — about ${fmtUsd(top.objectiveValue ?? 0)} of material`
+                : `does it with the least weight — about ${fmt(top.size.massKg ?? 0)} kg`
             : 'scores highest on the performance index'
         }.`,
       );

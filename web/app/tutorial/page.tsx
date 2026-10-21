@@ -14,6 +14,7 @@ const SECTIONS = [
   { id: 'describe', title: '1 · Describe your part' },
   { id: 'brief', title: '2 · Check the brief' },
   { id: 'results', title: '3 · Read the results' },
+  { id: 'eco', title: 'Footprint, sustainability and where to buy' },
   { id: 'api-key', title: 'Using your own API key' },
   { id: 'examples', title: 'Worked examples' },
   { id: 'ideas', title: 'Key ideas, explained' },
@@ -310,6 +311,47 @@ export default function TutorialPage() {
               <strong>Property data used</strong> — every candidate’s property ranges, with a filter by family. ✅ marks the ones that fit.
             </li>
           </ul>
+        </Section>
+
+        <Section id="eco" title="Footprint, sustainability and where to buy">
+          <h3>Lowest carbon</h3>
+          <p>
+            Choose <strong>🌱 Lowest carbon</strong> as the goal (or say “eco-friendly” in your description). For parts with a size, materials are ranked by the carbon needed to make <em>your part</em>: its mass × the material’s carbon footprint per kg. A heavier material with a small footprint per kg can beat a light one with a big footprint.
+          </p>
+          <h3>Balanced — when several things matter</h3>
+          <p>
+            Lightest, cheapest and lowest-carbon usually pick different materials. Choose <strong>⚖️ Balanced</strong> (or say “light but cheap”) and MatSelect uses Ashby’s <strong>penalty function</strong>: every option gets one number, <em>Z = material cost + (value of each kg saved) × mass + (carbon price) × CO₂</em>, and the lowest Z wins.
+          </p>
+          <p>
+            The two “exchange constants” say what weight and carbon are worth to you. A kilogram saved is worth about $1 on furniture, $10 on a bicycle, $10–20 on a car and $100 or more on a drone or aircraft; a carbon price of $100 per tonne is a common middle value. Pick a preset or type your own — the card shows how Z splits into material, mass and carbon.
+          </p>
+          <h3>Charts</h3>
+          <p>
+            <strong>Compare visually</strong> on the results page has two views. <strong>📊 Ranking</strong> shows every material’s score as a bar, with a thin line for the likely range from the Monte Carlo runs: overlapping lines mean the order could swap. <strong>⚖️ Trade-off</strong> plots mass against cost (or carbon) on log scales; the blue dots are the <em>trade-off front</em> — materials no other one beats on both — and, for the balanced goal, dashed lines join designs of equal penalty. Hover or tap a dot for its numbers, or switch to <strong>Table</strong>.
+          </p>
+          <h3>On every card</h3>
+          <ul>
+            <li>
+              <strong>🌱 Footprint</strong> — kg CO₂e and MJ of energy to make the part (or per kg when the part isn’t sized). These are typical cradle-to-gate values for new (virgin) material; recycled material is often much lower.
+            </li>
+            <li>
+              <strong>♻️ Recycling</strong> — good, possible, difficult or no, with today’s recycling infrastructure. <strong>🌿 Renewable</strong> and <strong>biodegradable</strong> show when they apply.
+            </li>
+            <li>
+              <strong>⚠ Critical</strong> — the material contains a raw material on the EU critical raw materials list (supply risk). This is checked against the official list, not guessed.
+            </li>
+            <li>
+              <strong>🛠️ How to make it</strong> — easy / moderate / hard to work, the processes it’s good for, practical tips and safety notes.
+            </li>
+          </ul>
+          <p>
+            To insist on it, add <em>Recyclable</em> or <em>From a renewable source</em> under “Must be…” in the brief’s details, or type it in <kbd>Anything else?</kbd>.
+          </p>
+          <h3>Where to buy</h3>
+          <p>
+            Pick your country (and optionally your city) in the brief or in the <strong>Where to buy</strong> panel on the results page, and press <kbd>Find suppliers</kbd>. With Claude, a live web search finds suppliers, stockists and markets for the top three picks, with links. When no supplier names the exact grade, it lists general stockists of that kind of material and says so. Without a key you get availability guidance and ready-made search links. Only the country and city are sent.
+          </p>
+          <TryIt text="A bookshelf board 90 cm long and 25 cm deep for about 30 kg of books, screwed to wall brackets. I live in Lagos, Nigeria and want it to be eco-friendly." label="Try an eco-friendly shelf in Lagos" />
         </Section>
 
         <Section id="api-key" title="Using your own Claude API key">

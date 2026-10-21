@@ -26,6 +26,7 @@ import {
   Family,
   Material,
   PROPERTY_KEYS,
+  RECYCLABILITY,
   normEnv,
   Question,
 } from 'src/common/domain/domain.types';
@@ -117,7 +118,22 @@ export const EXTRACTION_SCHEMA: Json = obj({
     safetyClass: enumOf(SAFETY_CLASSES),
     safetyFactor: nullable(num('Only if the user stated one')),
     assumptions: arr(str(), 'Every default you applied, in plain language'),
+    country: nullable(
+      str(
+        'Two-letter ISO 3166-1 code of the country the user says they are in or will buy in (e.g. "NG", "GB"); null if not stated',
+      ),
+    ),
     function: str('What the part does, in one plain sentence'),
+    penalty: nullable(
+      obj(
+        {
+          alphaMass: num('USD the user would pay to save 1 kg of part mass'),
+          alphaCo2: num('USD per kg CO₂e (carbon price ÷ 1000)'),
+          rationale: str('One short plain sentence on why these values'),
+        },
+        'Exchange constants for objective "balanced"; null for any other objective',
+      ),
+    ),
     customProperties: arr(
       obj({
         key: str('snake_case id, e.g. friction_coefficient'),
@@ -228,7 +244,22 @@ export const ExtractionOutput = z.object({
       safetyClass: z.enum(SAFETY_CLASSES),
       safetyFactor: z.number().nullable(),
       assumptions: z.array(z.string()),
+      country: z
+        .string()
+        .nullable()
+        .default(null)
+        .transform((c) =>
+          c && /^[a-z]{2}$/i.test(c.trim()) ? c.trim().toUpperCase() : null,
+        ),
       function: z.string().default(''),
+      penalty: z
+        .object({
+          alphaMass: z.number().min(0),
+          alphaCo2: z.number().min(0),
+          rationale: z.string().transform((r) => r.slice(0, 240)),
+        })
+        .nullable()
+        .default(null),
       customProperties: z
         .array(
           z.object({
@@ -281,12 +312,10 @@ export const ExtractionOutput = z.object({
       qs.slice(0, 3).map((q) => ({
         field: q.field,
         question: q.question,
-        options: q.options
-          .slice(0, 6)
-          .map((o) => ({
-            label: o.label,
-            value: parseJson(o.value_json, ctx),
-          })),
+        options: q.options.slice(0, 6).map((o) => ({
+          label: o.label,
+          value: parseJson(o.value_json, ctx),
+        })),
         default: parseJson(q.default_json, ctx),
       })),
     ),
@@ -307,6 +336,9 @@ const RANGE_DESCRIPTIONS: Record<(typeof PROPERTY_KEYS)[number], string> = {
   lambda: 'Thermal conductivity, W/m·K',
   alpha: 'Thermal expansion coefficient, µstrain/K',
   price: 'Typical bulk price of the raw stock, USD/kg',
+  co2: 'Cradle-to-gate carbon footprint of the raw material (typical virgin production, global average), kg CO₂e per kg',
+  embodiedEnergy:
+    'Cradle-to-gate embodied (primary) energy of the raw material, MJ per kg',
 };
 
 const ratingField = (what: string) =>
@@ -374,6 +406,30 @@ export const CANDIDATE_SCHEMA: Json = obj({
         str(),
         'Up to 3 references these values typically come from (handbook, standard, datasheet or paper). Only cite sources you are confident exist; empty if unsure.',
       ),
+      recyclability: nullable(
+        enumOf(
+          RECYCLABILITY,
+          'How practical it is to recycle at end of life with existing infrastructure',
+        ),
+      ),
+      renewable: nullable(
+        bool('True if made from a renewable (biological) source'),
+      ),
+      biodegradable: nullable(
+        bool('True if it biodegrades in normal composting or soil conditions'),
+      ),
+      criticalElements: arr(
+        str(),
+        'Raw materials/elements it contains in significant amounts (e.g. "titanium", "vanadium", "aluminium", "copper", "nickel", "cobalt", "magnesium", "manganese", "boron"); empty for none',
+      ),
+      hazards: arr(
+        str(),
+        'Up to 3 short health or safety hazards in making or using it (e.g. "fine dust when cutting — wear a mask"); empty if none notable',
+      ),
+      processingTips: arr(
+        str(),
+        'Up to 4 short practical tips for working it: cutting, joining, finishing, what to avoid',
+      ),
       confidence: enumOf(
         CONFIDENCES,
         'Your confidence in these property values',
@@ -402,6 +458,8 @@ export const CandidateOutputItem = z.object({
   lambda: RangeOrNull,
   alpha: RangeOrNull,
   price: RangeOrNull,
+  co2: RangeOrNull.default(null),
+  embodiedEnergy: RangeOrNull.default(null),
   brittle: z.boolean(),
   transparent: z.boolean(),
   electricalInsulator: z.boolean(),
@@ -424,6 +482,12 @@ export const CandidateOutputItem = z.object({
     )
     .default([]),
   sources: z.array(z.string()).default([]),
+  recyclability: z.enum(RECYCLABILITY).nullable().default(null),
+  renewable: z.boolean().nullable().default(null),
+  biodegradable: z.boolean().nullable().default(null),
+  criticalElements: z.array(z.string()).default([]),
+  hazards: z.array(z.string()).default([]),
+  processingTips: z.array(z.string()).default([]),
   processes: z.record(z.enum(PROCESSES), z.enum(PROCESS_RATINGS)),
   forms: z.array(z.string()),
   confidence: z.enum(CONFIDENCES),
@@ -476,6 +540,8 @@ export function toMaterials(
       lambda: r(it.lambda),
       alpha: r(it.alpha),
       price: r(it.price),
+      co2: r(it.co2),
+      embodiedEnergy: r(it.embodiedEnergy),
       brittle: it.brittle,
       transparent: it.transparent,
       electricalInsulator: it.electricalInsulator,
@@ -493,6 +559,14 @@ export function toMaterials(
         }),
       ),
       sources: it.sources.slice(0, 3).map((x) => x.slice(0, 240)),
+      recyclability: it.recyclability,
+      renewable: it.renewable,
+      biodegradable: it.biodegradable,
+      criticalElements: it.criticalElements
+        .slice(0, 12)
+        .map((x) => x.slice(0, 40)),
+      hazards: it.hazards.slice(0, 3).map((x) => x.slice(0, 160)),
+      processingTips: it.processingTips.slice(0, 4).map((x) => x.slice(0, 220)),
       processes: it.processes,
       forms: it.forms.slice(0, 12).map((f) => f.slice(0, 80)),
       confidence: it.confidence,

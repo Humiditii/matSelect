@@ -83,13 +83,25 @@ class StubLlm {
           'tMin',
           'lambda',
           'alpha',
-          'price',
+          'price', 'co2', 'embodiedEnergy',
         ].map((k) => [k, r(m[k])]),
       ),
       customRatings: [],
       extraProperties: [],
     }));
     return call.parse.parse({ materials });
+  }
+  searchCalls = 0;
+  async searchWeb(): Promise<string> {
+    this.searchCalls++;
+    return 'Here is what I found:\n```json\n' + JSON.stringify({
+      items: [
+        { name: 'x', availability: 'widely available', forms: ['board'], suppliers: [
+          { name: 'Lagos Timber Market', url: 'https://example-timber.ng/products', note: 'Pine boards' },
+          { name: 'Made-up Ltd', url: 'not a url', note: '' },
+        ], notes: 'Common locally.' },
+      ],
+    }) + '\n```';
   }
   async text(): Promise<string> {
     this.textCalls++;
@@ -279,6 +291,27 @@ describe('MatSelect API', () => {
       .expect(200);
     expect(bad.body.data.valid).toBe(false);
     await http().post('/api/api-key/verify').send({}).expect(400);
+  });
+
+  it('sourcing: demo guidance without a key, live search with one, cached per country', async () => {
+    const r = await http().post('/api/selections').send({ spec }).expect(201);
+    const id = r.body.data.id;
+
+    const demo = await http().post(`/api/selections/${id}/sourcing`).send({ country: 'NG' }).expect(200);
+    expect(demo.body.data).toMatchObject({ country: 'NG', countryName: 'Nigeria', dataSource: 'mock' });
+    expect(demo.body.data.items.length).toBe(Math.min(3, r.body.data.ranking.length));
+    expect(demo.body.data.items[0].searchLinks[0].url).toMatch(/^https:\/\/www\.google\.com\/search\?q=.*Nigeria/);
+
+    const live = await http().post(`/api/selections/${id}/sourcing`).set(H, GOOD_KEY).send({ country: 'NG', city: 'Lagos' }).expect(200);
+    expect(live.body.data).toMatchObject({ dataSource: 'llm', city: 'Lagos' });
+    expect(live.body.data.items[0].suppliers).toEqual([
+      { name: 'Lagos Timber Market', url: 'https://example-timber.ng/products', note: 'Pine boards' },
+    ]);
+    const calls = llm.searchCalls;
+    await http().post(`/api/selections/${id}/sourcing`).set(H, GOOD_KEY).send({ country: 'NG', city: 'Lagos' }).expect(200);
+    expect(llm.searchCalls).toBe(calls); // cached
+
+    await http().post(`/api/selections/${id}/sourcing`).send({ country: 'Nigeria' }).expect(400);
   });
 
   it('unknown ids → 404', async () => {

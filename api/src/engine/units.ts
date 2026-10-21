@@ -98,9 +98,11 @@ function convert(
   return q.value * factor;
 }
 
-
-export const toNewtons = (q: Quantity, field = 'load') => convert(q, FORCE, field, SUPPORTED_UNITS.force);
-export const toMetres = (q: Quantity, field = 'length') => convert(q, LENGTH, field, SUPPORTED_UNITS.length);
-export const toNewtonMetres = (q: Quantity, field = 'load') => convert(q, TORQUE, field, SUPPORTED_UNITS.torque);
+export const toNewtons = (q: Quantity, field = 'load') =>
+  convert(q, FORCE, field, SUPPORTED_UNITS.force);
+export const toMetres = (q: Quantity, field = 'length') =>
+  convert(q, LENGTH, field, SUPPORTED_UNITS.length);
+export const toNewtonMetres = (q: Quantity, field = 'load') =>
+  convert(q, TORQUE, field, SUPPORTED_UNITS.torque);
 
 export const isTorqueUnit = (unit: string) => TORQUE[norm(unit)] !== undefined;

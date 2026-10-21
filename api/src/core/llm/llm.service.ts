@@ -50,9 +50,14 @@ export class LlmService {
     this.serverKey = key || null;
     // LLM_PROVIDER=mock forces demo data even when keys are available (useful for demos and tests).
     this.forceMock = this.configService.get<string>('LLM_PROVIDER') === 'mock';
-    this.model = this.configService.get<string>('LLM_MODEL') || CONFIGS.DEFAULT_LLM_MODEL;
-    this.effort = (this.configService.get<string>('LLM_EFFORT') as Effort) || (CONFIGS.DEFAULT_LLM_EFFORT as Effort);
-    this.timeout = Number(this.configService.get('LLM_TIMEOUT_MS')) || CONFIGS.DEFAULT_LLM_TIMEOUT;
+    this.model =
+      this.configService.get<string>('LLM_MODEL') || CONFIGS.DEFAULT_LLM_MODEL;
+    this.effort =
+      (this.configService.get<string>('LLM_EFFORT') as Effort) ||
+      (CONFIGS.DEFAULT_LLM_EFFORT as Effort);
+    this.timeout =
+      Number(this.configService.get('LLM_TIMEOUT_MS')) ||
+      CONFIGS.DEFAULT_LLM_TIMEOUT;
     const fallbacks = this.configService.get<string>('LLM_FALLBACKS');
     this.useFallbacks = fallbacks
       ? ['true', '1', 'on', 'yes'].includes(fallbacks)
@@ -173,7 +178,6 @@ export class LlmService {
     ).trim();
   }
 
-
   private client(apiKey: string): Anthropic {
     const id = createHash('sha256').update(apiKey).digest('hex');
     let c = this.clients.get(id);
@@ -218,14 +222,13 @@ export class LlmService {
       },
       ...(this.useFallbacks
         ? {
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default' as const,
-        }
+            betas: ['server-side-fallback-2026-07-01'],
+            fallbacks: 'default' as const,
+          }
         : {}),
     };
 
     const started = Date.now();
-    const whose = ctx.keySource === KeySource.User ? 'Your' : 'The server’s';
     try {
       const msg = await this.client(ctx.apiKey)
         .beta.messages.stream(params)
@@ -285,46 +288,169 @@ export class LlmService {
           502,
         );
       }
-      // A user's own key being wrong is their problem to fix → 401 so the web app can ask for a new one.
-      if (err instanceof Anthropic.AuthenticationError)
-        throw new AppException(
-          `${whose} Claude API key was rejected. ${ctx.keySource === KeySource.User ? 'Update it in the key settings.' : 'Check ANTHROPIC_API_KEY in api/.env.'}`,
-          ctx.keySource === KeySource.User ? 401 : 502,
-        );
-      if (err instanceof Anthropic.PermissionDeniedError)
-        throw new AppException(
-          `${whose} Claude API key cannot use model ${this.model}.`,
-          ctx.keySource === KeySource.User ? 403 : 502,
-        );
-      if (err instanceof Anthropic.NotFoundError)
-        throw new AppException(
-          `Model ${this.model} was not found. Set LLM_MODEL in api/.env.`,
-          502,
-        );
-      if (err instanceof Anthropic.RateLimitError)
-        throw new AppException(
-          'Claude rate limit reached. Please wait a minute and try again.',
-          429,
-        );
-      if (err instanceof Anthropic.APIConnectionTimeoutError)
-        throw new AppException(
-          `Claude did not answer the ${label} request in time.`,
-          504,
-        );
-      if (err instanceof Anthropic.APIConnectionError)
-        throw new AppException(
-          'Could not reach the Claude API. Check the network connection.',
-          502,
-        );
-      if (err instanceof Anthropic.APIError)
-        throw new AppException(
-          `Claude API error ${err.status ?? ''} during ${label}: ${err.message}`,
-          502,
-        );
-      throw new AppException(
-        `Unexpected error calling Claude for ${label}: ${(err as Error).message}`,
+      throw this.toAppException(err, ctx, label);
+    }
+  }
+
+  /** Map an Anthropic SDK error to the HTTP error the web app should see. */
+  private toAppException(
+    err: unknown,
+    ctx: LlmContextI,
+    label: string,
+  ): AppException {
+    if (err instanceof AppException) return err;
+    const whose = ctx.keySource === KeySource.User ? 'Your' : 'The server’s';
+    // A user's own key being wrong is their problem to fix → 401 so the web app can ask for a new one.
+    if (err instanceof Anthropic.AuthenticationError)
+      return new AppException(
+        `${whose} Claude API key was rejected. ${ctx.keySource === KeySource.User ? 'Update it in the key settings.' : 'Check ANTHROPIC_API_KEY in api/.env.'}`,
+        ctx.keySource === KeySource.User ? 401 : 502,
+      );
+    if (err instanceof Anthropic.PermissionDeniedError)
+      return new AppException(
+        `${whose} Claude API key cannot use model ${this.model}.`,
+        ctx.keySource === KeySource.User ? 403 : 502,
+      );
+    if (err instanceof Anthropic.NotFoundError)
+      return new AppException(
+        `Model ${this.model} was not found. Set LLM_MODEL in api/.env.`,
         502,
       );
+    if (err instanceof Anthropic.RateLimitError)
+      return new AppException(
+        'Claude rate limit reached. Please wait a minute and try again.',
+        429,
+      );
+    if (err instanceof Anthropic.APIConnectionTimeoutError)
+      return new AppException(
+        `Claude did not answer the ${label} request in time.`,
+        504,
+      );
+    if (err instanceof Anthropic.APIConnectionError)
+      return new AppException(
+        'Could not reach the Claude API. Check the network connection.',
+        502,
+      );
+    if (err instanceof Anthropic.APIError)
+      return new AppException(
+        `Claude API error ${err.status ?? ''} during ${label}: ${err.message}`,
+        502,
+      );
+    return new AppException(
+      `Unexpected error calling Claude for ${label}: ${(err as Error).message}`,
+      502,
+    );
+  }
+
+  /**
+   * Text answer with live web search (Anthropic's server-side web_search tool), localised to a country
+   * (and optionally a city). Resumes server-side "pause_turn" stops. Returns the final text.
+   * Citations come back with web search, so structured output can't be combined here; callers parse JSON.
+   */
+  async searchWeb(
+    ctx: LlmContextI,
+    label: string,
+    system: string,
+    user: string,
+    location: { country: string; city?: string | null } | null,
+    maxSearches = 8,
+  ): Promise<string> {
+    if (!ctx.apiKey)
+      throw new AppException(
+        'No Claude API key is available for this request.',
+        400,
+      );
+    const tools = [
+      {
+        type: 'web_search_20260209' as const,
+        name: 'web_search' as const,
+        max_uses: maxSearches,
+        ...(location
+          ? {
+              user_location: {
+                type: 'approximate' as const,
+                country: location.country,
+                ...(location.city ? { city: location.city } : {}),
+              },
+            }
+          : {}),
+      },
+    ];
+    let messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
+      { role: 'user', content: user },
+    ];
+    const started = Date.now();
+    try {
+      for (let turn = 0; turn < 4; turn++) {
+        const msg = await this.client(ctx.apiKey)
+          .beta.messages.stream({
+            model: this.model,
+            max_tokens: 16000,
+            system,
+            messages,
+            tools,
+            output_config: { effort: this.effort },
+            ...(this.useFallbacks
+              ? {
+                  betas: ['server-side-fallback-2026-07-01'],
+                  fallbacks: 'default' as const,
+                }
+              : {}),
+          })
+          .finalMessage();
+        this.logger.log(
+          `LlmService: ${label} [${ctx.keySource} key] ${msg.model} ${Date.now() - started} ms, in ${msg.usage.input_tokens} / out ${msg.usage.output_tokens} tokens, stop=${msg.stop_reason}`,
+        );
+        if (msg.stop_reason === 'pause_turn') {
+          // The server paused a long search loop: send the turn back unchanged and it resumes.
+          messages = [
+            { role: 'user', content: user },
+            {
+              role: 'assistant',
+              content:
+                msg.content as unknown as Anthropic.Beta.Messages.BetaContentBlockParam[],
+            },
+          ];
+          continue;
+        }
+        if (msg.stop_reason === 'refusal')
+          throw new AppException(`Claude declined the ${label} request.`, 502);
+        const text = msg.content
+          .filter(
+            (b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text',
+          )
+          .map((b) => b.text)
+          .join('');
+        if (!text.trim())
+          throw new AppException(
+            `Claude returned an empty ${label} answer.`,
+            502,
+          );
+        return text;
+      }
+      throw new AppException(`Claude's ${label} search did not finish.`, 504);
+    } catch (err) {
+      // The search provider doesn't support every country as a location (e.g. "NG"): search again
+      // without the location hint; the prompt already names the country and city.
+      if (
+        location &&
+        err instanceof Anthropic.BadRequestError &&
+        /not supported|user_location|country code/i.test(err.message)
+      ) {
+        this.logger.warn(
+          `LlmService: search location ${location.country} not supported; searching without it.`,
+        );
+        return this.searchWeb(ctx, label, system, user, null, maxSearches);
+      }
+      if (
+        err instanceof Anthropic.BadRequestError &&
+        err.message.toLowerCase().includes('fallback') &&
+        this.useFallbacks
+      ) {
+        this.useFallbacks = false;
+        return this.searchWeb(ctx, label, system, user, location, maxSearches);
+      }
+      throw this.toAppException(err, ctx, label);
     }
   }
 }

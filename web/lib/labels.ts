@@ -42,7 +42,53 @@ export const PROPERTY_LABEL: Record<string, { label: string; unit: string }> = {
   lambda: { label: 'Thermal conductivity', unit: 'W/m·K' },
   alpha: { label: 'Thermal expansion', unit: 'µstrain/K' },
   price: { label: 'Price', unit: 'USD/kg' },
+  co2: { label: 'Carbon footprint', unit: 'kg CO₂e/kg' },
+  embodiedEnergy: { label: 'Embodied energy', unit: 'MJ/kg' },
 };
+
+export const RECYCLABILITY_STYLE: Record<string, string> = {
+  good: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  possible: 'bg-sky-50 text-sky-700 ring-sky-200',
+  difficult: 'bg-amber-50 text-amber-800 ring-amber-200',
+  no: 'bg-rose-50 text-rose-700 ring-rose-200',
+};
+
+const NOT_COUNTRIES = new Set(['EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'ZZ', 'AQ', 'BV', 'HM', 'TF', 'UM', 'IO', 'CP', 'DG', 'EA', 'IC', 'TA', 'AC', 'XK']);
+let countryCache: { code: string; name: string }[] | null = null;
+
+/** Every country the browser knows, sorted by name (built from Intl, no hard-coded list). */
+export function countries(): { code: string; name: string }[] {
+  if (countryCache) return countryCache;
+  const out: { code: string; name: string }[] = [];
+  try {
+    const dn = new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' });
+    for (let a = 65; a <= 90; a++)
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        const name = dn.of(code);
+        // Skip retired codes (e.g. DY → BJ for Benin): keep only codes that are their own canonical form.
+        const canonical = Intl.getCanonicalLocales(`und-${code}`)[0]?.split('-')[1];
+        if (name && name !== code && canonical === code && !NOT_COUNTRIES.has(code)) out.push({ code, name });
+      }
+  } catch {
+    /* very old browsers: empty list, the select still works with typed codes */
+  }
+  countryCache = out.sort((x, y) => x.name.localeCompare(y.name));
+  return countryCache;
+}
+
+export const countryNameOf = (code: string | null | undefined) =>
+  (code && countries().find((c) => c.code === code)?.name) || code || '';
+
+/** Best guess of the user's country from the browser locale (e.g. "en-NG" → "NG"). */
+export function browserCountry(): string | null {
+  try {
+    const region = new Intl.Locale(navigator.language).maximize().region;
+    return region && /^[A-Z]{2}$/.test(region) ? region : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Label and unit of a standard or custom property. */
 export function propertyInfo(spec: { customProperties?: { key: string; label: string; unit: string }[] }, key: string) {
@@ -99,6 +145,8 @@ export const MUST_HAVE_LABEL: Record<MustHave, string> = {
   transparent: 'See-through',
   electrical_insulator: 'Doesn’t conduct electricity',
   impact_resistant: 'Won’t shatter if hit',
+  recyclable: 'Recyclable',
+  renewable: 'From a renewable source',
 };
 
 export const FAMILY_LABEL: Record<Family, { label: string; icon: string; color: string }> = {

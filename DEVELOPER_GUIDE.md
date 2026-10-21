@@ -121,13 +121,22 @@ Units: density kg/m³, E/G GPa, strength MPa, K MPa·√m, temperatures °C, λ 
 - **Demo profiles** live in `mockExtract()` (`api/src/core/llm/mock/mock.data.ts`): brake pad, heat sink, and a generic "what matters most?" question for anything unknown. To add one, add a `Kind`, a keyword in `kindOf()` and a `case` that sets `function`, `propertyLimits` and `customObjective`. If it needs a custom property, give some demo materials values for it via the last argument of `m()` in `mock.materials.ts` (see the friction materials); otherwise demo mode drops that requirement and says so (`demoAdjust()`).
 - With Claude, the extraction prompt (`EXTRACTION_SYSTEM` in `prompts.ts`) does this translation for any part; edit its examples to steer it.
 
-## 6. Custom environments (typed by the user)
+## 6. Footprint, sustainability, processing and sourcing
+
+- Per-material data: `co2`, `embodiedEnergy`, `recyclability`, `renewable`, `biodegradable`, `criticalElements`, `hazards`, `processingTips` on `Material` (`common/domain/domain.types.ts`). Claude supplies them (`CANDIDATE_SCHEMA` + `CANDIDATE_SYSTEM`); demo values are in `core/llm/mock/mock.eco.ts`.
+- Calculation and flags: `engine/sustainability.ts` (EU critical raw materials list, processability) and `pipeline.ts` (footprint, "lowest carbon" goal, recyclable/renewable must-haves).
+- Where to buy: `core/sourcing/` (API) and `web/components/WhereToBuy.tsx`. To change how suppliers are searched, edit the prompt in `sourcing.service.ts`; the number of searches is the `15` passed to `searchWeb`.
+- **Balanced goal (penalty function):** `DEFAULT_ALPHA`, `penaltyPerKg()`, `penaltyOf()` and `tradeoffOf()` in `engine/pipeline.ts`; the brief's α inputs and presets in `web/components/PenaltyEditor.tsx`; Claude's suggested values come from the `objective` rules in `EXTRACTION_SYSTEM`.
+- **Charts:** `web/components/Charts.tsx` — `RankingChart` (bars + p10–p90 whiskers, top 12) and `TradeoffChart` (log–log mass vs cost/carbon, Pareto front, equal-penalty lines, table view). Plain SVG, no chart library; colours are the constants at the top of the file.
+- Country: `DesignSpec.country` (two-letter code). Set from the description ("I'm in Lagos") or the brief's country picker. Claude then prefers locally obtainable materials.
+
+## 7. Custom environments (typed by the user)
 
 Users can add conditions that aren't in the list (e.g. "next to a chlorinated pool") in the Confirm form or as an "Other" answer to the environment question.
 - **Claude mode:** Claude rates every candidate material for each one (A–E). The engine requires **B or better** (`CUSTOM_ENV_MIN`); unknown ratings send the material to "Not evaluated" — they are never guessed.
 - **Demo mode:** the text is matched to the closest built-in conditions (`engine/environments.ts`, e.g. "pool" → wet + chemicals) and the results page says so; if nothing matches, it says the condition was not checked.
 
-## 7. Testing and debugging
+## 8. Testing and debugging
 
 ```bash
 npm test

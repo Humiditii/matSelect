@@ -30,6 +30,7 @@ import {
   SUPPORTS,
   TORQUE_UNITS,
 } from '@/lib/types';
+import { PenaltyEditor } from './PenaltyEditor';
 import { Button, Card, Chip, Field, NumberInput, QuantityInput, Segmented, cx, inputClass } from './ui';
 
 export const MAX_CUSTOM_ENVIRONMENTS = 5;
@@ -149,8 +150,11 @@ export function SpecEditor({ spec, onChange }: { spec: DesignSpec; onChange: (pa
               options={[
                 { value: 'min_mass', label: '🪶 As light as possible' },
                 { value: 'min_cost', label: '💲 As cheap as possible' },
+                { value: 'min_carbon', label: '🌱 Lowest carbon' },
+                { value: 'balanced', label: '⚖️ Balanced' },
               ]}
             />
+            {spec.objective === 'balanced' && <PenaltyEditor value={spec.penalty} onChange={(penalty) => onChange({ penalty })} />}
           </Field>
           {spec.component !== 'custom' && (
           <Field label="It must…" hint={spec.criteria.length === 0 ? 'Choose at least one.' : undefined}>

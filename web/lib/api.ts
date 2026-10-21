@@ -1,5 +1,5 @@
 import { KEY_HEADER, getUserKey } from './apiKey';
-import type { Audience, DesignSpec, ExtractResponse, Explanation, Health, SelectionResult, SelectionSummary } from './types';
+import type { Audience, DesignSpec, ExtractResponse, Explanation, Health, SelectionResult, SelectionSummary, SourcingResult } from './types';
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
 
@@ -59,6 +59,12 @@ export const api = {
   getSelection: (id: string) => request<SelectionResult>(`/selections/${encodeURIComponent(id)}`),
   explain: (id: string, audience: Audience) =>
     request<Explanation>(`/selections/${encodeURIComponent(id)}/explain`, { method: 'POST', body: JSON.stringify({ audience }), withKey: true }),
+  findSources: (id: string, country: string, city?: string, refresh = false) =>
+    request<SourcingResult>(`/selections/${encodeURIComponent(id)}/sourcing`, {
+      method: 'POST',
+      body: JSON.stringify({ country, ...(city ? { city } : {}), ...(refresh ? { refresh: true } : {}) }),
+      withKey: true,
+    }),
   verifyKey: (apiKey: string) =>
     request<{ valid: boolean; model: string; message: string; serverHasKey: boolean }>('/api-key/verify', {
       method: 'POST',

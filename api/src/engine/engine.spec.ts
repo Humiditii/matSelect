@@ -53,6 +53,14 @@ export function mat(
     customRatings: {},
     extra: {},
     sources: [],
+    co2: null,
+    embodiedEnergy: null,
+    recyclability: null,
+    renewable: null,
+    biodegradable: null,
+    criticalElements: [],
+    hazards: [],
+    processingTips: [],
     processes: { drill: 'good', hand_cut: 'possible', weld: 'good' },
     forms: ['bar'],
     confidence: 'high',
@@ -651,5 +659,202 @@ describe('general parts: property limits and custom index', () => {
         propertyLimits: [{ property: 'magic', min: 1 }],
       }),
     ).toThrow(/unknown property/);
+  });
+});
+
+describe('footprint, sustainability and processability', () => {
+  const beam = {
+    title: 'Rail',
+    component: 'beam' as const,
+    criteria: ['stiffness' as const],
+    load: { value: 1, unit: 'kN' },
+    length: { value: 1, unit: 'm' },
+    maxDeflection: { value: 5, unit: 'mm' },
+    support: 'cantilever_end' as const,
+    section: 'solid_square' as const,
+  };
+  const steel = mat({
+    id: 'steel',
+    name: 'Steel',
+    co2: [1.6, 2.4],
+    embodiedEnergy: [20, 30],
+    recyclability: 'good',
+    criticalElements: ['Manganese'],
+  });
+  const alu = mat({
+    id: 'alu',
+    name: 'Aluminium',
+    density: [2690, 2710],
+    E: [69, 71],
+    co2: [8, 16],
+    embodiedEnergy: [180, 220],
+    recyclability: 'good',
+    criticalElements: ['aluminium', 'Mg', 'chromium'],
+    processes: {
+      hand_cut: 'good',
+      power_cut: 'good',
+      drill: 'good',
+      machine: 'good',
+      glue: 'good',
+      fasten: 'good',
+    },
+  });
+
+  it('"lowest carbon" ranks by part mass × CO₂ per kg (steel beats aluminium on carbon, not on mass)', () => {
+    const byMass = runSelection(spec(beam), [steel, alu], { mcSamples: 100 });
+    expect(byMass.ranking[0].materialId).toBe('alu');
+    const byCarbon = runSelection(
+      spec({ ...beam, objective: 'min_carbon' }),
+      [steel, alu],
+      { mcSamples: 100 },
+    );
+    expect(byCarbon.objectiveUnit).toBe('kg CO₂e');
+    expect(byCarbon.ranking[0].materialId).toBe('steel');
+    const r = byCarbon.ranking[0];
+    expect(r.objectiveValue).toBeCloseTo(
+      r.sizing!.massKg * Math.sqrt(1.6 * 2.4),
+      6,
+    );
+    expect(r.footprint).toMatchObject({ basis: 'part' });
+    expect(r.footprint!.co2Kg![0]).toBeCloseTo(r.sizing!.massKg * 1.6, 6);
+    expect(r.reasons.join(' | ')).toMatch(/Lowest-carbon part .* kg CO₂e/);
+  });
+
+  it('index mode uses CO₂ per kg in the index and reports footprint per kg', () => {
+    const res = runSelection(
+      spec({
+        title: 'x',
+        component: 'beam',
+        criteria: ['stiffness'],
+        objective: 'min_carbon',
+      }),
+      [steel, alu],
+      { mcSamples: 50 },
+    );
+    expect(res.index.expression).toBe('E^(1/2)/ρ·CO₂');
+    expect(res.ranking[0].footprint).toMatchObject({
+      basis: 'kg',
+      co2Kg: [1.6, 2.4],
+    });
+  });
+
+  it('"balanced" ranks by the penalty Z = cost + α_m·mass + α_CO₂·CO₂ and reports its parts', () => {
+    const carbonHeavy = runSelection(
+      spec({
+        ...beam,
+        objective: 'balanced',
+        penalty: { alphaMass: 0, alphaCo2: 10, rationale: '' },
+      }),
+      [steel, alu],
+      { mcSamples: 100 },
+    );
+    expect(carbonHeavy.objectiveUnit).toBe('USD eq.');
+    expect(carbonHeavy.ranking[0].materialId).toBe('steel');
+    const massHeavy = runSelection(
+      spec({
+        ...beam,
+        objective: 'balanced',
+        penalty: { alphaMass: 1000, alphaCo2: 0, rationale: '' },
+      }),
+      [steel, alu],
+      { mcSamples: 100 },
+    );
+    expect(massHeavy.ranking[0].materialId).toBe('alu');
+    const r = massHeavy.ranking[0];
+    expect(r.penalty!.z).toBeCloseTo(
+      r.penalty!.material + r.penalty!.mass + r.penalty!.carbon,
+      9,
+    );
+    expect(r.penalty!.mass).toBeCloseTo(1000 * r.sizing!.massKg, 6);
+    expect(r.objectiveValue).toBeCloseTo(r.penalty!.z, 6);
+    expect(r.tradeoff).toMatchObject({ basis: 'part', mass: r.sizing!.massKg });
+    expect(r.reasons[0]).toMatch(
+      /Best balance of cost, mass and carbon: penalty about/,
+    );
+  });
+
+  it('"balanced" without exchange constants uses the defaults and says so', () => {
+    const res = runSelection(
+      spec({ ...beam, objective: 'balanced' }),
+      [steel, alu],
+      { mcSamples: 20 },
+    );
+    expect(res.warnings.join(' ')).toMatch(
+      /\$1 per kg saved and \$0.1 per kg CO₂e/,
+    );
+    expect(res.ranking[0].penalty).toMatchObject({
+      alphaMass: 1,
+      alphaCo2: 0.1,
+    });
+  });
+
+  it('"balanced" in index mode divides the mass index by the penalty per kg; trade-off is relative to the lightest', () => {
+    const res = runSelection(
+      spec({
+        title: 'x',
+        component: 'beam',
+        criteria: ['stiffness'],
+        objective: 'balanced',
+        penalty: { alphaMass: 5, alphaCo2: 0.1, rationale: '' },
+      }),
+      [steel, alu],
+      { mcSamples: 20 },
+    );
+    expect(res.index.expression).toBe('E^(1/2)/ρ·(C + α_m + α_CO₂·CO₂)');
+    const masses = res.ranking.map((r) => r.tradeoff!.mass);
+    expect(Math.min(...masses)).toBeCloseTo(1, 9);
+    expect(res.ranking.every((r) => r.tradeoff!.basis === 'relative')).toBe(
+      true,
+    );
+  });
+
+  it('matches critical raw materials against the EU list in code, ignoring others', () => {
+    const res = runSelection(spec(beam), [alu], { mcSamples: 10 });
+    expect(res.ranking[0].sustainability.criticalRawMaterials).toEqual([
+      'aluminium/bauxite',
+      'magnesium',
+    ]);
+    expect(res.ranking[0].reasons.join(' | ')).toMatch(
+      /EU critical raw materials: aluminium\/bauxite, magnesium/,
+    );
+  });
+
+  it('rates processability from the workshop process ratings', () => {
+    const res = runSelection(spec(beam), [alu, steel], { mcSamples: 10 });
+    const a = res.ranking.find((r) => r.materialId === 'alu')!;
+    expect(a.processability.level).toBe('easy');
+    const s = res.ranking.find((r) => r.materialId === 'steel')!;
+    expect(s.processability.level).toBe(null); // only 3 rated processes, 2 of them workshop ones
+  });
+
+  it('applies the recyclable and renewable must-haves, never guessing unknowns', () => {
+    const wood = mat({
+      id: 'wood',
+      name: 'Pine',
+      family: 'wood_natural',
+      recyclability: 'good',
+      renewable: true,
+    });
+    const cfrp = mat({
+      id: 'cfrp',
+      name: 'CFRP',
+      family: 'composite',
+      recyclability: 'difficult',
+      renewable: false,
+    });
+    const unknown = mat({ id: 'unk', name: 'Unknown' });
+    const res = runSelection(
+      spec({ ...beam, mustHave: ['recyclable', 'renewable'] }),
+      [wood, cfrp, unknown],
+      { mcSamples: 10 },
+    );
+    expect(res.ranking.map((r) => r.materialId)).toEqual(['wood']);
+    expect(res.rejected[0].reasons).toEqual([
+      'Hard to recycle (recyclability: difficult)',
+      'Not made from a renewable source',
+    ]);
+    expect(res.notEvaluated[0].reasons[0]).toMatch(
+      /recyclability, whether it is renewable/,
+    );
   });
 });

@@ -24,7 +24,7 @@ export class ExplanationService {
   constructor(
     private readonly llm: LlmService,
     private readonly logger: AppLoggerService,
-  ) { }
+  ) {}
 
   /**
    * explanation for one audience, then the grounding check (every number must come from the

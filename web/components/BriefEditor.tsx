@@ -10,6 +10,8 @@ import {
   propertyInfo,
 } from '@/lib/labels';
 import { DesignSpec, ENVIRONMENTS, FORCE_UNITS, LENGTH_UNITS, PropertyLimit, TORQUE_UNITS } from '@/lib/types';
+import { CountrySelect } from './CountrySelect';
+import { PenaltyEditor } from './PenaltyEditor';
 import { CustomEnvInput } from './SpecEditor';
 import { Button, Card, Chip, NumberInput, QuantityInput, Segmented, cx, inputClass } from './ui';
 
@@ -75,10 +77,14 @@ export function BriefEditor({
     ? [
         { value: 'min_mass' as const, label: '🏆 Best performance' },
         { value: 'min_cost' as const, label: '💲 Best value for money' },
+        { value: 'min_carbon' as const, label: '🌱 Lowest carbon' },
+        { value: 'balanced' as const, label: '⚖️ Balanced' },
       ]
     : [
         { value: 'min_mass' as const, label: '🪶 As light as possible' },
         { value: 'min_cost' as const, label: '💲 As cheap as possible' },
+        { value: 'min_carbon' as const, label: '🌱 Lowest carbon' },
+        { value: 'balanced' as const, label: '⚖️ Balanced' },
       ];
   const submitExtra = () => {
     if (extra.trim().length < 3) return;
@@ -115,8 +121,11 @@ export function BriefEditor({
             <p className="mt-2 text-sm text-slate-600">
               Ranked by: <strong className="font-medium text-slate-900">{spec.customObjective.description}</strong>
               {spec.objective === 'min_cost' && ', per dollar'}
+              {spec.objective === 'min_carbon' && ', per kg CO₂e'}
+              {spec.objective === 'balanced' && ', per unit of penalty'}
             </p>
           )}
+          {spec.objective === 'balanced' && <PenaltyEditor value={spec.penalty} onChange={(penalty) => onChange({ penalty })} />}
         </section>
 
         {/* Optional size */}
@@ -200,6 +209,10 @@ export function BriefEditor({
             ))}
           </div>
           <CustomEnvInput values={spec.customEnvironments} onChange={(customEnvironments) => onChange({ customEnvironments })} />
+          <label htmlFor="brief-country" className="mt-4 block text-sm font-medium text-slate-700">
+            Your country <span className="font-normal text-slate-500">(optional — for locally available materials and suppliers)</span>
+          </label>
+          <CountrySelect id="brief-country" className="mt-1 max-w-xs" value={spec.country} onChange={(country) => onChange({ country })} />
         </section>
 
         {/* Refine in plain words */}

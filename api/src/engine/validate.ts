@@ -1,5 +1,5 @@
 /**
- * Plausibility checks on AI-supplied material data 
+ * Plausibility checks on AI-supplied material data
  * Out-of-bounds data is never "fixed": the material goes to invalidData.
  */
 import {
@@ -23,6 +23,8 @@ export const BOUNDS: Record<PropertyKey, [number, number]> = {
   lambda: [0.001, 3000],
   alpha: [-50, 500],
   price: [0.01, 200_000],
+  co2: [0.001, 5000],
+  embodiedEnergy: [0.01, 100_000],
 };
 
 /** Properties where max/min is meaningful (strictly positive quantities). */
@@ -34,6 +36,8 @@ const RATIO_CHECKED: PropertyKey[] = [
   'Kic',
   'lambda',
   'price',
+  'co2',
+  'embodiedEnergy',
 ];
 export const WIDE_RANGE_RATIO = 30;
 

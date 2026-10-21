@@ -8,6 +8,7 @@
  *            hand_cut power_cut drill machine weld glue fasten bend cast mould print_3d woodwork
  *   flags    b=brittle t=transparent i=electrical insulator
  */
+import { ecoFor } from './mock.eco';
 import {
   Confidence,
   Family,
@@ -85,6 +86,15 @@ function m(
     forms,
     confidence,
     notes,
+    co2: null,
+    embodiedEnergy: null,
+    recyclability: null,
+    renewable: null,
+    biodegradable: null,
+    criticalElements: [],
+    hazards: [],
+    processingTips: [],
+    ...ecoFor(name, family),
   };
 }
 

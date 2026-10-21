@@ -20,7 +20,12 @@ export const COMPONENTS = [
   'thermal_shock',
   'custom',
 ] as const;
-export const OBJECTIVES = ['min_mass', 'min_cost'] as const;
+export const OBJECTIVES = [
+  'min_mass',
+  'min_cost',
+  'min_carbon',
+  'balanced',
+] as const;
 export const CRITERIA = ['stiffness', 'strength'] as const;
 export const SUPPORTS = [
   'simply_supported_center',
@@ -66,7 +71,10 @@ export const MUST_HAVES = [
   'transparent',
   'electrical_insulator',
   'impact_resistant',
+  'recyclable',
+  'renewable',
 ] as const;
+export const RECYCLABILITY = ['good', 'possible', 'difficult', 'no'] as const;
 export const FAMILIES = [
   'metal',
   'polymer',
@@ -250,11 +258,29 @@ const DesignSpecBase = z.object({
     .default(null),
   assumptions: z.array(z.string().max(400)).max(40).default([]),
   sourceText: z.string().max(2000).default(''),
+  /** Country for sourcing suggestions (ISO 3166-1 alpha-2, e.g. "NG"). */
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/, 'use a two-letter country code, e.g. NG')
+    .nullable()
+    .default(null),
   /** What the part does, in one plain sentence. */
   function: z.string().max(300).default(''),
   customProperties: z.array(CustomProperty).max(4).default([]),
   propertyLimits: z.array(PropertyLimit).max(8).default([]),
   customObjective: CustomObjective.nullable().default(null),
+  /**
+   * Exchange constants for the "balanced" goal (Ashby's penalty function Z = C + α_m·m + α_CO₂·CO₂):
+   * what saving 1 kg of the part, and avoiding 1 kg of CO₂e, are worth in USD.
+   */
+  penalty: z
+    .object({
+      alphaMass: finite.min(0).max(1_000_000),
+      alphaCo2: finite.min(0).max(10_000),
+      rationale: z.string().max(240).default(''),
+    })
+    .nullable()
+    .default(null),
 });
 
 export const DesignSpec = DesignSpecBase.superRefine((s, ctx) => {
@@ -300,6 +326,8 @@ export const PROPERTY_KEYS = [
   'lambda',
   'alpha',
   'price',
+  'co2',
+  'embodiedEnergy',
 ] as const;
 export type PropertyKey = (typeof PROPERTY_KEYS)[number];
 
@@ -317,6 +345,8 @@ export const PROPERTY_META: Record<
   lambda: { label: 'Thermal conductivity', unit: 'W/m·K', symbol: 'λ' },
   alpha: { label: 'Thermal expansion', unit: 'µstrain/K', symbol: 'α' },
   price: { label: 'Price', unit: 'USD/kg', symbol: 'C' },
+  co2: { label: 'Carbon footprint', unit: 'kg CO₂e/kg', symbol: 'CO₂' },
+  embodiedEnergy: { label: 'Embodied energy', unit: 'MJ/kg', symbol: 'H' },
 };
 
 export const RatingsSchema = z.object({
@@ -342,6 +372,9 @@ export const Material = z.object({
   lambda: Range.nullable(),
   alpha: Range.nullable(),
   price: Range.nullable(),
+  /** Cradle-to-gate footprint of the raw material, per kg (typical, virgin production). */
+  co2: Range.nullable().default(null),
+  embodiedEnergy: Range.nullable().default(null),
   brittle: z.boolean(),
   transparent: z.boolean(),
   electricalInsulator: z.boolean(),
@@ -354,6 +387,14 @@ export const Material = z.object({
   extra: z.record(z.string(), Range.nullable()).default({}),
   /** References the values typically come from (AI-recalled — to verify). */
   sources: z.array(z.string().max(240)).max(6).default([]),
+  // Sustainability and processing (null / empty = unknown).
+  recyclability: z.enum(RECYCLABILITY).nullable().default(null),
+  renewable: z.boolean().nullable().default(null),
+  biodegradable: z.boolean().nullable().default(null),
+  /** Elements/raw materials it contains, as named by the supplier of the data; matched to the EU list in code. */
+  criticalElements: z.array(z.string().max(40)).max(12).default([]),
+  hazards: z.array(z.string().max(160)).max(4).default([]),
+  processingTips: z.array(z.string().max(220)).max(5).default([]),
   confidence: Confidence,
   notes: z.string().max(600).default(''),
 });
@@ -433,8 +474,83 @@ export interface RankedMaterial {
   indexValues: Record<string, number>;
   sizing: Sizing | null;
   processFit: Partial<Record<Process, ProcessRating>>;
+  /** Carbon and energy for the sized part (basis "part") or per kg of material (basis "kg"). */
+  footprint: FootprintI | null;
+  sustainability: SustainabilityI;
+  processability: ProcessabilityI;
+  /** Coordinates for the trade-off chart: the part (sized) or per unit of performance relative to the lightest (index). */
+  tradeoff: TradeoffI | null;
+  /** Penalty breakdown for the "balanced" goal (sized parts). */
+  penalty: PenaltyI | null;
   reasons: string[];
   dataFlags: string[];
+}
+
+export interface FootprintI {
+  basis: 'part' | 'kg';
+  co2Kg: Range | null;
+  energyMJ: Range | null;
+}
+
+export interface SustainabilityI {
+  recyclability: (typeof RECYCLABILITY)[number] | null;
+  renewable: boolean | null;
+  biodegradable: boolean | null;
+  /** Matches against the EU critical raw materials list (Regulation (EU) 2024/1252, Annex II). */
+  criticalRawMaterials: string[];
+  hazards: string[];
+}
+
+export interface TradeoffI {
+  /** "part": real values for the sized part; "relative": per unit of performance, lightest = 1. */
+  basis: 'part' | 'relative';
+  mass: number;
+  cost: number | null;
+  co2: number | null;
+}
+
+export interface PenaltyI {
+  /** Z = material cost + α_m·mass + α_CO₂·CO₂ (USD-equivalent). */
+  z: number;
+  material: number;
+  mass: number;
+  carbon: number;
+  alphaMass: number;
+  alphaCo2: number;
+}
+
+export interface ProcessabilityI {
+  level: 'easy' | 'moderate' | 'hard' | null;
+  /** Processes rated "good" for this material, best first. */
+  best: Process[];
+  tips: string[];
+}
+
+export interface SupplierI {
+  name: string;
+  url: string;
+  note: string;
+}
+
+export interface SourcingItemI {
+  materialId: string;
+  name: string;
+  availability:
+    'widely available' | 'specialist suppliers' | 'likely imported' | null;
+  forms: string[];
+  suppliers: SupplierI[];
+  searchLinks: { label: string; url: string }[];
+  notes: string;
+}
+
+export interface SourcingResultI {
+  country: string;
+  countryName: string;
+  city: string | null;
+  generatedAt: string;
+  dataSource: DataSource;
+  items: SourcingItemI[];
+  note: string;
 }
 
 export interface ExcludedMaterial {
@@ -476,6 +592,8 @@ export interface SelectionResult {
   /** Whose Claude key produced the AI data: the server's, the user's own, or none (demo data). */
   keySource?: 'server' | 'user' | 'none';
   explanations: Partial<Record<Audience, Explanation>>;
+  /** Where-to-buy results, cached per country code. */
+  sourcing?: Partial<Record<string, SourcingResultI>>;
   timingsMs: Record<string, number>;
   mcSamples: number;
   seed: number;
