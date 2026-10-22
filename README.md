@@ -17,25 +17,79 @@ results · explanation       engine: indices, screening, sizing, Monte Carlo ·
 - **Backend internals:** **[api/README.md](api/README.md)** — every module, the request lifecycle, key handling, the engine's maths, errors and persistence. Swagger docs run at `http://localhost:4000/api-docs`.
 - **Changing the app:** the **[developer guide](DEVELOPER_GUIDE.md)** — folder map and step-by-step recipes.
 
-## Run it (native, no Docker)
+## Run it on your computer
 
-Requirements: **Node.js 20+** and **MongoDB** running locally (e.g. `brew services start mongodb-community@7.0`).
+You don't need Docker. You need Node.js and MongoDB, and about ten minutes the first time.
+
+### 1. Install Node.js (if you don't have it)
+
+Check first:
+
+```bash
+node -v
+```
+
+If you see `v20` or higher, you're set. If not, download the **LTS** version from [nodejs.org](https://nodejs.org) and install it. npm comes with it. On a Mac with Homebrew you can also run `brew install node`.
+
+### 2. Install and start MongoDB (if you don't have it)
+
+This is where results are saved.
+
+- **Mac (Homebrew):**
+
+  ```bash
+  brew tap mongodb/brew && brew install mongodb-community
+  ```
+
+  ```bash
+  brew services start mongodb-community
+  ```
+
+- **Windows or Linux:** install the free [MongoDB Community Server](https://www.mongodb.com/try/download/community) and let it run as a service.
+- **Don't want to install anything?** Create a free database on [MongoDB Atlas](https://www.mongodb.com/atlas) and use its connection string in step 4.
+
+### 3. Get the code
+
+```bash
+git clone https://github.com/Humiditii/matSelect.git
+```
+
+```bash
+cd matSelect
+```
+
+No git? Click **Code → Download ZIP** on GitHub, unzip it, and open a terminal in that folder.
+
+### 4. Install everything and create the env files
 
 ```bash
 npm run setup
 ```
 
+This installs the packages for the API and the web app, and creates the two settings files for you:
+
+- `api/.env`, copied from `api/.env.example`
+- `web/.env.local`, copied from `web/.env.example`
+
+The defaults work as they are. Open `api/.env` only if you want to change something:
+
+- **Using MongoDB Atlas?** Set `DB_URL` to your Atlas connection string.
+- **Have an API key?** Put it in `ANTHROPIC_API_KEY` for real AI results. Leave it empty and the app runs on built-in demo data (the calculations are still real), or each user can paste their own key in the app.
+
+### 5. Start the app
+
 ```bash
 npm run dev
 ```
 
-Open http://localhost:3000. The API is at http://localhost:4000/api.
+Open **http://localhost:3000** and describe what you want to build. That's it. Press `Ctrl + C` in the terminal to stop.
 
-- **Demo mode** (no key anywhere): built-in extraction, 67 curated materials and template explanations. Everything works without a key and the UI shows a "Demo data" badge. The calculations are always real.
-- **Your own key**: if the server has no key, anyone can click the badge in the top-right corner and paste their own Claude API key. It is kept in their browser, sent only with requests that need Claude, and never stored by the server.
-- **Claude mode**: put your key in `api/.env` (`ANTHROPIC_API_KEY=…`) and restart. Model defaults to `claude-opus-5-5` (`LLM_MODEL`), effort `medium` (`LLM_EFFORT`).
+**If something goes wrong**
 
-Production: `npm run build` then `npm start`. Tests: `npm test`.
+- *"Cannot reach the API"*: MongoDB probably isn't running. Start it (step 2) and run `npm run dev` again.
+- *Port already in use*: something else is on port 3000 or 4000. Close it, or change `PORT` in `api/.env` and the same port in `NEXT_PUBLIC_API_URL` in `web/.env.local`.
+
+For a production build, run `npm run build` then `npm start`. To run the tests, run `npm test`.
 
 ## Configuration
 
