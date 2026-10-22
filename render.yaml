@@ -1,13 +1,9 @@
-# Render Blueprint: creates the API and the web app as two Node web services.
-# Render → New → Blueprint → pick this repository. Values marked `sync: false` are asked for
-# when the Blueprint is created (they are secrets or depend on the other service's URL).
 services:
   - type: web
     name: matselect-api
     runtime: node
     rootDir: api
     plan: free
-    # --include=dev: the Nest CLI and TypeScript are dev dependencies but are needed to build.
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
@@ -20,11 +16,11 @@ services:
         value: "true"
       - key: SERVICE_NAME
         value: matselect-api
-      - key: DB_URL # MongoDB Atlas connection string, e.g. mongodb+srv://user:pass@cluster…/matselect
+      - key: DB_URL
         sync: false
-      - key: WEB_ORIGIN # the web app's URL, e.g. https://matselect-web.onrender.com
+      - key: WEB_ORIGIN
         sync: false
-      - key: ANTHROPIC_API_KEY # optional: leave empty to let users bring their own key
+      - key: ANTHROPIC_API_KEY 
         sync: false
       - key: LLM_MODEL
         value: claude-opus-5-5
@@ -49,6 +45,5 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # Baked into the browser bundle at build time: redeploy the web app after changing it.
-      - key: NEXT_PUBLIC_API_URL # e.g. https://matselect-api.onrender.com/api
+      - key: NEXT_PUBLIC_API_URL
         sync: false

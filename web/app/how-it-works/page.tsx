@@ -28,7 +28,8 @@ const SECTIONS = [
   { id: 'explain', title: '10 · The explanation' },
   { id: 'extras', title: 'Footprint and sourcing' },
   { id: 'code-map', title: 'Under the hood' },
-  { id: 'limits', title: 'Honest limits' },
+  { id: 'limits', title: 'Limitations' },
+  { id: 'next', title: 'What we are building next' },
   { id: 'glossary', title: 'Glossary' },
   { id: 'references', title: 'References' },
 ];
@@ -73,6 +74,113 @@ const REFERENCES = [
   'Regulation (EU) 2024/1252 of the European Parliament and of the Council (Critical Raw Materials Act), Annex II, 2024.',
   'ISO 14040:2006, Environmental management — Life cycle assessment — Principles and framework.',
 ];
+
+const LIMITATIONS: [string, [string, string, string][]][] = [
+  [
+    'The data',
+    [
+      [
+        'No single source of truth for material data yet',
+        'Property values (stiffness, strength, price, carbon and so on) are gathered by the LLM from its knowledge of handbooks, datasheets and the literature, rather than read from one curated, verified database. They are usually close, but they can differ from a specific supplier’s grade.',
+        'Every value is checked against physical limits, impossible ones are thrown out, unknown ones stay unknown, and each material shows a confidence level. This is the first thing we plan to improve (see “What we are building next”).',
+      ],
+      [
+        'Only a shortlist is considered',
+        'Each family contributes about 10 candidates (about 60 in total), chosen by the LLM for your part. A good grade it doesn’t think of is never evaluated.',
+        'All six families always compete, so no family is left out. The number per family can be raised in the settings.',
+      ],
+      [
+        'The shortlist can vary slightly between runs',
+        'The LLM may suggest a slightly different set of materials each time you run the same request.',
+        'For the same shortlist the calculation is fully repeatable, and every result is saved, so you can always go back to it.',
+      ],
+      [
+        'Prices are rough, raw-material prices',
+        'Price per kg varies by supplier, country, quantity and year, and does not include cutting, machining or finishing.',
+        'Price is drawn across its whole range in the uncertainty check, and the cost is shown as a range.',
+      ],
+    ],
+  ],
+  [
+    'The physics',
+    [
+      [
+        'Simple, static loads only',
+        'Parts are sized with standard textbook models: linear elastic, one static load, simple supports. Fatigue (failure after many repeated loads), creep (slow sagging over years), impact, vibration and wear are not calculated.',
+        'A safety factor of 1.5 to 3 is applied, brittle materials can be excluded for impact, and for parts like brake pads the important behaviour is handled through the material index instead.',
+      ],
+      [
+        'A few shapes and load cases',
+        'Beams, ties, columns and shafts with a handful of cross-sections and supports. Joints, holes, welds and complex 3D shapes are not modelled.',
+        'The size given is for the plain part; leave extra margin where it is joined or drilled.',
+      ],
+      [
+        'Wood and composites are not the same in every direction',
+        'They are much stronger along the grain or fibres than across them. The values used are along the strong direction.',
+        'Wood is never sized as a thin tube, and the conservative low end of each range is used. Make sure the grain or fibres run along the part.',
+      ],
+      [
+        'Custom indices depend on the LLM’s physics',
+        'For non-structural parts (brake pads, heat sinks, knife blades), the index to maximise is proposed by the LLM from the physics of the job. A poorly chosen index gives a poorly ordered list.',
+        'The index is shown on the brief and on the results page, so you can see exactly what was maximised and change the requirements if it looks wrong.',
+      ],
+    ],
+  ],
+  [
+    'The uncertainty check (simplified for this first version)',
+    [
+      [
+        'Properties are varied independently',
+        'In the Monte Carlo step each property is drawn on its own, while in real materials some are linked (a stiffer piece of wood is usually also denser). This is a deliberate simplification for this first version. It can make the spread look a little wider than it really is, but it does not make the results unreliable: the main ranking uses the conservative ends and does not depend on it.',
+        'The shear modulus estimated from stiffness already moves together with it. Modelling the other links between properties is on our list.',
+      ],
+      [
+        'Screening is not repeated in each run',
+        'A material that passed the pass/fail round stays in for all 1000 runs, even if a weak draw would have failed a requirement. Again a simplification, and it only matters for materials whose range sits right on a limit.',
+        'Those materials are already flagged with “choose the grade carefully”, so you can see which ones are borderline.',
+      ],
+    ],
+  ],
+  [
+    'Sustainability and sourcing',
+    [
+      [
+        'Footprints are cradle-to-gate, for new material',
+        'The carbon and energy figures cover making the material, not transporting it, using it or disposing of it, and recycled material can be far lower. They are not a full life cycle assessment.',
+        'The figures are labelled as estimates, and recyclability and renewability are shown alongside.',
+      ],
+      [
+        'Supplier search is a starting point',
+        'Suppliers found by web search may be out of date or may not stock the exact grade.',
+        'When no supplier names the exact grade, the app says so and lists general stockists, and always gives search links you can follow yourself.',
+      ],
+    ],
+  ],
+];
+
+const ROADMAP: [string, string, string][] = [
+  [
+    '🗄️',
+    'Our own trusted materials database',
+    'An agent that regularly crawls reliable sources (published handbooks, standards bodies, supplier datasheets and open materials databases) and stores the property data in our own database, with the source of every value.',
+  ],
+  [
+    '⚡',
+    'Selections that read from it, not the open internet',
+    'When you run a selection, our agent fetches candidates and their properties from that database instead of relying on the LLM’s memory or a live search. Results become faster, repeatable and traceable to a source.',
+  ],
+  [
+    '💲',
+    'Up-to-date prices and carbon footprints',
+    'The same crawler keeps material prices and carbon footprints current from reliable market and environmental data, so cost and carbon rankings reflect today’s figures rather than typical values.',
+  ],
+  [
+    '🎲',
+    'A more realistic uncertainty check',
+    'Drawing linked properties together and re-checking requirements inside each simulation run, once the database gives us better information about how properties vary.',
+  ],
+];
+
 
 const GLOSSARY = [
   ['Brief', 'The structured list of requirements the engine works from: goal, loads, environment, must-haves, limits.'],
@@ -623,14 +731,45 @@ export default function HowItWorksPage() {
           </p>
         </DocSection>
 
-        <DocSection id="limits" kicker="Read this before you build" title="Honest limits">
-          <ul>
-            <li>Property values are typical ranges suggested by an AI, then sanity-checked. They are not certified datasheet values. Always confirm with your supplier before building anything that matters.</li>
-            <li>The physics models are the standard textbook ones: linear elastic, simple supports, static loads. Fatigue (failure after millions of small loads), creep, impact and joints are not calculated.</li>
-            <li>Composites and wood behave differently along and across the grain or fibres. The values used are along the strong direction.</li>
-            <li>Carbon footprints are cradle-to-gate for new material, which can be very different for recycled material.</li>
-            <li>Results are guidance for choosing a material, not a certified design. For anything that carries people or loads over people, have it checked by a qualified engineer.</li>
-          </ul>
+        <DocSection id="limits" kicker="Read this before you build" title="Limitations">
+          <p>
+            MatSelect is careful about what it calculates, but it is only as good as its inputs and its models. These are the limits we know about, what each one means for you, and what the app already does to soften it.
+          </p>
+          {LIMITATIONS.map(([group, items]) => (
+            <div key={group}>
+              <h3>{group}</h3>
+              <div className="not-prose space-y-2">
+                {items.map(([title, limit, mitigation]) => (
+                  <div key={title} className="rounded-xl p-3 text-sm ring-1 ring-slate-200">
+                    <p className="font-semibold text-slate-900">{title}</p>
+                    <p className="mt-1 text-slate-700">{limit}</p>
+                    <p className="mt-1 text-slate-500">
+                      <span className="font-medium text-slate-600">What the app does: </span>
+                      {mitigation}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <Callout icon="🦺" title="The bottom line">
+            Results are guidance for <em>choosing</em> a material, not a certified design. Confirm property values with your supplier&rsquo;s datasheet, and for anything that carries people or hangs over people, have the final design checked by a qualified engineer.
+          </Callout>
+        </DocSection>
+
+        <DocSection id="next" kicker="Where we are going" title="What we are building next">
+          <p>
+            MatSelect is a first version (an MVP). The calculations are solid; the biggest thing we want to improve is where the material data comes from. This is our plan:
+          </p>
+          <div className="not-prose my-4 grid gap-3 sm:grid-cols-2">
+            {ROADMAP.map(([icon, title, text]) => (
+              <div key={title} className="rounded-xl bg-slate-50 p-4 text-sm">
+                <div className="text-2xl">{icon}</div>
+                <p className="mt-1 font-semibold text-slate-900">{title}</p>
+                <p className="mt-1 text-slate-600">{text}</p>
+              </div>
+            ))}
+          </div>
         </DocSection>
 
         <DocSection id="glossary" title="Glossary">

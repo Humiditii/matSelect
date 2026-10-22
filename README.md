@@ -37,26 +37,6 @@ Open http://localhost:3000. The API is at http://localhost:4000/api.
 
 Production: `npm run build` then `npm start`. Tests: `npm test`.
 
-## Deploy to Render
-
-`render.yaml` is a Render Blueprint that creates both services: `matselect-api` (NestJS) and `matselect-web` (Next.js). Render has no MongoDB, so the database runs on MongoDB Atlas.
-
-1. **Database.** Create a free cluster at [MongoDB Atlas](https://www.mongodb.com/atlas). Add a database user, and under *Network Access* allow `0.0.0.0/0` (Render's free tier has no fixed IPs). Copy the connection string and add the database name: `mongodb+srv://USER:PASS@CLUSTER.mongodb.net/matselect`.
-2. **Repository.** Push this folder to GitHub, GitLab or Bitbucket. `.gitignore` already excludes `api/.env`, `web/.env.local`, `node_modules`, build output and logs.
-3. **Blueprint.** In Render: *New → Blueprint* → pick the repository. When asked, set:
-   - `DB_URL` — the Atlas string from step 1;
-   - `ANTHROPIC_API_KEY` — your key, or leave empty so visitors bring their own;
-   - `WEB_ORIGIN` — `https://matselect-web.onrender.com`;
-   - `NEXT_PUBLIC_API_URL` — `https://matselect-api.onrender.com/api`.
-
-   If Render gives the services different URLs, update `WEB_ORIGIN` and `NEXT_PUBLIC_API_URL` to the real ones, then redeploy the web app (`NEXT_PUBLIC_*` values are baked in at build time).
-4. **Check.** Open `https://<api>/api/health` (`database` should say `connected`), then the web URL.
-
-Notes:
-- Free services sleep after about 15 minutes idle; the first request then takes 30–60 s to wake them.
-- Logs show in Render's dashboard (`LOG_CONSOLE=true`); the log files on Render's disk are temporary.
-- To move existing results from your machine: `mongodump --uri "mongodb://127.0.0.1:27017/matselect"` then `mongorestore --uri "<Atlas string>" dump/`.
-
 ## Configuration
 
 `api/.env` (see `api/.env.example`):

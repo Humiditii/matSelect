@@ -5,7 +5,7 @@ export function DocSection({ id, kicker, title, children }: { id: string; kicker
     <section id={id} className="scroll-mt-20 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
       {kicker && <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">{kicker}</p>}
       <h2 className="mb-4 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{title}</h2>
-      <div className="prose prose-slate max-w-none prose-h3:mb-2 prose-h3:mt-7 prose-h3:text-lg prose-p:my-3 prose-li:my-1">{children}</div>
+      <div className="prose prose-slate max-w-none prose-h3:mb-2 prose-h3:mt-7 prose-h3:text-lg prose-p:my-3 prose-li:my-1 prose-code:before:content-none prose-code:after:content-none">{children}</div>
     </section>
   );
 }
